@@ -1,16 +1,13 @@
-// Loads data/seed-history.json (the workbook's 5-year history) into the
-// database. Safe to re-run: rows are upserted by date.
-//   npm run db:push && npm run seed
-import seed from "../data/seed-history.json";
-import { upsertGold, upsertShares } from "../src/lib/prices";
-import type { RawRow } from "../src/lib/analytics/series";
+// Creates the tables and loads data/seed-history.json (the workbook's 5-year
+// history) into an empty database. The same runs on Vercel via POST
+// /api/admin/setup, for machines whose DNS can't reach Neon.
+//   npm run seed
+import { ensureTables, seedIfEmpty } from "../src/lib/db/setup";
 
 async function main() {
-  const rows = (seed as { rows: RawRow[] }).rows;
-  const gold = rows.filter((r) => r.g !== undefined).map((r) => ({ date: r.d, price: r.g! }));
-  const shares = rows.filter((r) => r.mu !== undefined || r.ma !== undefined).map((r) => ({ date: r.d, muthoot: r.mu, manappuram: r.ma }));
-  console.log(`gold rows: ${await upsertGold(gold, "excel")}`);
-  console.log(`share rows: ${await upsertShares(shares, "excel")}`);
+  await ensureTables();
+  const r = await seedIfEmpty();
+  console.log(r.seeded ? `Loaded ${r.rows} dates.` : `Skipped: table already has ${r.rows} rows.`);
 }
 
 main().catch((err) => {

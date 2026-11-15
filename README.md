@@ -42,12 +42,13 @@ the page flags it until that day's spot is uploaded.
 ```bash
 npm install
 cp .env.example .env.local   # DATABASE_URL, ADMIN_SECRET, SETTINGS_ENCRYPTION_KEY, CRON_SECRET
-npm run db:push              # create the two tables
-npm run seed                 # load the 5-year history
+npm run seed                 # create the tables and load the 5-year history
 npm run dev
 ```
 
 Without `DATABASE_URL` the app runs read-only on the seed history (no admin writes, no live prices).
+If your network's DNS can't reach `*.neon.tech`, run the same setup on Vercel instead:
+`curl -X POST -H "x-admin-secret: …" https://gold-vs-gold-nbfc.vercel.app/api/admin/setup`.
 
 Deploys: pushes to `main` deploy on Vercel. Set the four env vars in the Vercel project (Neon from the Storage
 tab sets `DATABASE_URL`).
