@@ -7,7 +7,7 @@ export async function GET() {
     const { rows, source } = await loadHistory();
     return Response.json(
       { rows, source, generatedAt: new Date().toISOString() },
-      { headers: { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=600" } }
+      { headers: { "Cache-Control": "public, s-maxage=20, stale-while-revalidate=40" } }
     );
   } catch (err) {
     console.error("[history]", err);
