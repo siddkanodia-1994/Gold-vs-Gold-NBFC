@@ -13,6 +13,8 @@ import { dayLabel, inr, pct, toneOf } from "./format";
 import { buildModel } from "./model";
 import { RatioSection, RegressionSection } from "./sections";
 import { SummarySection } from "./summary";
+import { STANDARD_DEFAULTS, type SummaryDefaults, type SummaryView } from "@/lib/summary-defaults";
+import { goldLedgerPoints } from "@/lib/analytics/gold-ledger-points";
 import { ValuationSection } from "./valuation";
 import { PERIOD_OPTIONS, periodOf, type PeriodKey as MultiplesPeriodKey } from "@/lib/valuation/model";
 import type { ValuationModelData } from "@/lib/valuation/store";
@@ -104,9 +106,11 @@ interface Settings {
   avgInput: string;
   /** Multiples window picked in this view (null = the saved default). */
   mp: MultiplesPeriodKey | null;
+  /** Summary view picked in this visit (null = the saved default). */
+  sv: SummaryView | null;
 }
 
-const DEFAULTS: Settings = { section: "summary", company: "muthoot", period: DEFAULT_PERIOD, from: "", to: "", avgInput: String(DEFAULT_AVG), mp: null };
+const DEFAULTS: Settings = { section: "summary", company: "muthoot", period: DEFAULT_PERIOD, from: "", to: "", avgInput: String(DEFAULT_AVG), mp: null, sv: null };
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -127,6 +131,8 @@ function readUrl(): Partial<Settings> {
   if (q.get("from")) out.from = q.get("from")!;
   if (q.get("to")) out.to = q.get("to")!;
   if (q.get("avg")) out.avgInput = q.get("avg")!;
+  const sv = q.get("sv");
+  if (sv === "gold" || sv === "model") out.sv = sv;
   const mp = q.get("mp");
   if (PERIOD_OPTIONS.some((x) => x.key === mp)) out.mp = mp as MultiplesPeriodKey;
   return out;
@@ -143,6 +149,7 @@ function writeUrl(s: Settings, avgDays: number) {
   }
   if (avgDays !== DEFAULT_AVG) q.set("avg", String(avgDays));
   if (s.mp) q.set("mp", s.mp);
+  if (s.sv) q.set("sv", s.sv);
   const qs = q.toString();
   window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
 }
@@ -207,6 +214,9 @@ export function Dashboard() {
     const r = history.data ? [...history.data.rows].reverse().find((x) => x.g !== undefined) : undefined;
     return r ? { date: r.d, price: r.g! } : null;
   }, [history.data]);
+  const summaryDefaults = useSWR<SummaryDefaults>("/api/summary-defaults", fetchJson, { revalidateOnFocus: false });
+  const savedSummary = summaryDefaults.data ?? STANDARD_DEFAULTS;
+  const goldPoints = useMemo(() => goldLedgerPoints(history.data?.rows ?? []), [history.data]);
   const lastRow = rows?.at(-1);
   const today = live.data?.asOf ? new Date(Date.parse(live.data.asOf) + 5.5 * 3600_000).toISOString().slice(0, 10) : null;
 
@@ -421,6 +431,11 @@ export function Dashboard() {
                 <p className="aa-note">{s.period === "Custom" ? "Pick a From and To date (From before To)." : "No sessions in this window."}</p>
               ) : s.section === "summary" ? (
                 <SummarySection
+                  view={s.sv ?? savedSummary.view}
+                  onView={(sv) => set({ sv })}
+                  goldPoints={goldPoints}
+                  saved={savedSummary}
+                  onSaved={() => summaryDefaults.mutate()}
                   model={model}
                   lookbackMonths={lookbackMonths}
                   apply={apply}

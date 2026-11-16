@@ -4,7 +4,12 @@ Live dashboard of MCX Gold M (₹ per 10 g) against Muthoot Finance (MUTHOOTFIN)
 (MANAPPURAM): the ratio and regression analysis of `20261029 Gold Vs Gold NBFC Regression.xlsx`, laid out like
 the AMC Analytics Ratio / Regression tabs.
 
-- **Summary**: auto-written takeaways, ratio and regression snapshot for both companies, R² by gold avg days,
+- **Summary · Gold price** (the default view): MCX Gold M spot as the AMC dashboard's AUM Summary period
+  ledger — FY / quarter / month averages with YoY, QoQ, MoM, last 5/20/45 days, optional weekday tables — plus
+  a current-quarter panel (latest spot, quarter-to-date average and the projected quarter average if spot holds,
+  vs last quarter and the same quarter last year). "Save as default" stores the view, weekday tables and row
+  picks (as positions back from the latest period) for everyone.
+- **Summary · Ratio & regression**: auto-written takeaways, ratio and regression snapshot for both companies, R² by gold avg days,
   optimum lookback, and the avg-days × lookback R² grid (click a cell to apply it).
 - **Ratio**: share price ÷ N-day avg gold, with mean and ±1/±2 SD over the window, z-score, percentile and the
   price at each band.

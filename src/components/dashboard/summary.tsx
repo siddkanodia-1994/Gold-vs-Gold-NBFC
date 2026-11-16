@@ -4,6 +4,11 @@ import { useMemo, useState } from "react";
 import { AVG_DAYS_GRID, computeOptimiser, LOOKBACK_GRID, type OptimiserResult } from "@/lib/analytics/optimiser";
 import { COMPANIES, type CompanyKey } from "@/lib/instruments";
 import { zText } from "./common";
+import { GoldPriceSummary, offsetsFromSelections, selectionsFromOffsets, withSelection } from "./gold-ledger";
+import type { LedgerSelections } from "./gold-ledger";
+import { buildPeriodLedger } from "@/lib/analytics/period-ledger";
+import type { SummaryDefaults, SummaryView } from "@/lib/summary-defaults";
+import type { LedgerPoint } from "@/lib/analytics/period-ledger";
 import { dayLabel, inr, num, pct } from "./format";
 import { goldLabel, type Model } from "./model";
 
@@ -209,18 +214,115 @@ export function SummarySection({
   lookbackMonths,
   apply,
   multiples,
+  view,
+  onView,
+  goldPoints,
+  saved,
+  onSaved,
 }: {
   model: Model;
   lookbackMonths: number | null;
   apply: ApplySettings;
   /** The valuation-multiples snapshot table, shown under the ratio and regression ones. */
   multiples?: React.ReactNode;
+  /** Gold price (the default) or the ratio & regression summary. */
+  view: SummaryView;
+  /** Picks a view for this visit; null goes back to the saved default. */
+  onView: (v: SummaryView | null) => void;
+  goldPoints: LedgerPoint[];
+  /** The shared saved default (view, weekday tables, row picks). */
+  saved: SummaryDefaults;
+  /** Re-reads the saved default after a save. */
+  onSaved: () => Promise<unknown>;
 }) {
   const opt = useMemo(() => computeOptimiser(model.rows, model.span, model.avgDays), [model]);
   const [gridCo, setGridCo] = useState<CompanyKey>("muthoot");
   const sessions = model.span.endIdx - model.span.startIdx + 1;
+  const ledger = useMemo(() => buildPeriodLedger(goldPoints), [goldPoints]);
+  const [hideChoice, setHideChoice] = useState<boolean | null>(null);
+  const [selChoice, setSelChoice] = useState<LedgerSelections | null>(null);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const hideWeekdays = hideChoice ?? saved.hideWeekdays;
+  const selections = selChoice ?? selectionsFromOffsets(ledger, saved.rows);
+  const rows = offsetsFromSelections(ledger, selections);
+  const dirty = view !== saved.view || hideWeekdays !== saved.hideWeekdays || JSON.stringify(rows) !== JSON.stringify(saved.rows);
+
+  async function saveDefault() {
+    setSaveState("saving");
+    try {
+      const res = await fetch("/api/summary-defaults", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ view, hideWeekdays, rows } satisfies SummaryDefaults),
+      });
+      if (!res.ok) throw new Error();
+      await onSaved();
+      setHideChoice(null);
+      setSelChoice(null);
+      onView(null);
+      setSaveState("saved");
+    } catch {
+      setSaveState("error");
+    }
+  }
+
+  function backToSaved() {
+    setHideChoice(null);
+    setSelChoice(null);
+    onView(null);
+    setSaveState("idle");
+  }
+
+  const toggle = (
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="gn-seg" role="group" aria-label="Summary view">
+        <button type="button" aria-pressed={view === "gold"} onClick={() => onView("gold")}>
+          Gold price
+        </button>
+        <button type="button" aria-pressed={view === "model"} onClick={() => onView("model")}>
+          Ratio &amp; regression
+        </button>
+      </div>
+      <span className="aa-fitbar-sep" aria-hidden />
+      <button type="button" className="aa-btn" disabled={!dirty || saveState === "saving"} onClick={saveDefault}>
+        {saveState === "saving" ? "Saving…" : "Save as default"}
+      </button>
+      {dirty ? (
+        <button type="button" className="aa-btn aa-btn--ghost" onClick={backToSaved}>
+          Back to saved
+        </button>
+      ) : (
+        <span className="text-xs text-[var(--pl-color-text-muted)]">
+          {saveState === "saved" ? "Saved — this view, the weekday tables and the row picks now open for everyone." : "On the saved default (view, weekday tables, row picks)"}
+        </span>
+      )}
+      {saveState === "error" && <span className="text-xs" style={{ color: "#a30c15" }}>Couldn&apos;t save — try again.</span>}
+    </div>
+  );
+  if (view === "gold") {
+    return (
+      <div className="gn-stack">
+        {toggle}
+        <GoldPriceSummary
+          model={ledger}
+          points={goldPoints}
+          selections={selections}
+          onSelect={(key, label) => {
+            setSelChoice(withSelection(selections, key, label));
+            setSaveState("idle");
+          }}
+          hideWeekdays={hideWeekdays}
+          onHideWeekdays={(v) => {
+            setHideChoice(v);
+            setSaveState("idle");
+          }}
+        />
+      </div>
+    );
+  }
   return (
     <div className="gn-stack">
+      {toggle}
       <div className="gn-card">
         <p className="gn-cap">Key takeaways (auto-updating)</p>
         <p className="gn-sub">
