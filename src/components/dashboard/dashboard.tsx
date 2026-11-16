@@ -14,6 +14,8 @@ import { buildModel } from "./model";
 import { RatioSection, RegressionSection } from "./sections";
 import { SummarySection } from "./summary";
 import { ValuationSection } from "./valuation";
+import { PERIOD_OPTIONS, periodOf, type PeriodKey as MultiplesPeriodKey } from "@/lib/valuation/model";
+import type { ValuationModelData } from "@/lib/valuation/store";
 
 type Section = "summary" | "ratio" | "regression" | "multiples" | "valuation" | "data";
 
@@ -100,9 +102,11 @@ interface Settings {
   from: string;
   to: string;
   avgInput: string;
+  /** Multiples window picked in this view (null = the saved default). */
+  mp: MultiplesPeriodKey | null;
 }
 
-const DEFAULTS: Settings = { section: "summary", company: "muthoot", period: DEFAULT_PERIOD, from: "", to: "", avgInput: String(DEFAULT_AVG) };
+const DEFAULTS: Settings = { section: "summary", company: "muthoot", period: DEFAULT_PERIOD, from: "", to: "", avgInput: String(DEFAULT_AVG), mp: null };
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -123,6 +127,8 @@ function readUrl(): Partial<Settings> {
   if (q.get("from")) out.from = q.get("from")!;
   if (q.get("to")) out.to = q.get("to")!;
   if (q.get("avg")) out.avgInput = q.get("avg")!;
+  const mp = q.get("mp");
+  if (PERIOD_OPTIONS.some((x) => x.key === mp)) out.mp = mp as MultiplesPeriodKey;
   return out;
 }
 
@@ -136,6 +142,7 @@ function writeUrl(s: Settings, avgDays: number) {
     if (s.to) q.set("to", s.to);
   }
   if (avgDays !== DEFAULT_AVG) q.set("avg", String(avgDays));
+  if (s.mp) q.set("mp", s.mp);
   const qs = q.toString();
   window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
 }
@@ -170,6 +177,10 @@ export function Dashboard() {
     revalidateOnFocus: true,
   });
 
+  const valuation = useSWR<ValuationModelData>("/api/valuation-model", fetchJson, { revalidateOnFocus: false });
+  // One multiples window for the Multiples tab, the Summary's multiples table and the Valuation Model's reference table.
+  const multiplesKey: MultiplesPeriodKey = s.mp ?? valuation.data?.settings.multiplesPeriod ?? "3Y";
+  const multiplesPeriod = useMemo(() => periodOf(multiplesKey), [multiplesKey]);
   const multiples = useSWR<{ companies: MultiplesData | null }>("/api/multiples", fetchJson, { revalidateOnFocus: false, refreshInterval: 15 * 60_000 });
 
   const rows = useMemo(() => {
@@ -337,14 +348,24 @@ export function Dashboard() {
               )}
 
               <div className="aa-fitbar" role="toolbar" aria-label="Period and gold average" hidden={s.section === "valuation"}>
-                <div className="gn-seg" role="group" aria-label="Period">
-                  {PERIODS.map((p) => (
-                    <button key={p.key} type="button" aria-pressed={p.key === s.period} onClick={() => set({ period: p.key })}>
-                      {p.key}
-                    </button>
-                  ))}
-                </div>
-                {s.period === "Custom" && (
+                {s.section === "multiples" ? (
+                  <div className="gn-seg" role="group" aria-label="Multiples period">
+                    {PERIOD_OPTIONS.map((p) => (
+                      <button key={p.key} type="button" aria-pressed={p.key === multiplesKey} onClick={() => set({ mp: p.key })}>
+                        {p.key}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="gn-seg" role="group" aria-label="Period">
+                    {PERIODS.map((p) => (
+                      <button key={p.key} type="button" aria-pressed={p.key === s.period} onClick={() => set({ period: p.key })}>
+                        {p.key}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {s.period === "Custom" && s.section !== "multiples" && (
                   <span className="gn-lbl">
                     <input
                       type="date"
@@ -372,12 +393,16 @@ export function Dashboard() {
                   />
                 </label>
                 <span className="aa-fitbar-sep" aria-hidden />
-                {isDefault ? (
+                {s.section === "multiples" ? (
                   <span className="text-xs text-[var(--pl-color-text-muted)]">
-                    {s.section === "multiples" ? "Default view (3Y)" : "Default view (3Y · 1D spot gold)"}
-                    {model && s.section !== "multiples"
-                      ? ` · ${model.span.endIdx - model.span.startIdx + 1} sessions, ${dayLabel(model.span.start)} → ${dayLabel(model.span.end)}`
-                      : ""}
+                    {`Multiples window ${multiplesKey} — shared with the Valuation Model's reference table and the Summary${
+                      s.mp && s.mp !== valuation.data?.settings.multiplesPeriod ? " (not saved; Save as default on the Valuation Model)" : ""
+                    }`}
+                  </span>
+                ) : isDefault ? (
+                  <span className="text-xs text-[var(--pl-color-text-muted)]">
+                    Default view (3Y · 1D spot gold)
+                    {model ? ` · ${model.span.endIdx - model.span.startIdx + 1} sessions, ${dayLabel(model.span.start)} → ${dayLabel(model.span.end)}` : ""}
                   </span>
                 ) : (
                   <button type="button" className="aa-btn aa-btn--ghost" onClick={() => apply({ months: 36, avgDays: DEFAULT_AVG })}>
@@ -399,21 +424,27 @@ export function Dashboard() {
                   model={model}
                   lookbackMonths={lookbackMonths}
                   apply={apply}
-                  multiples={period && <MultiplesSnapshot data={multiples.data?.companies} period={period} live={liveBy} priceOn={priceOnBy} />}
+                  multiples={<MultiplesSnapshot data={multiples.data?.companies} period={multiplesPeriod} periodKey={multiplesKey} live={liveBy} priceOn={priceOnBy} />}
                 />
               ) : s.section === "ratio" ? (
                 <RatioSection model={model} company={s.company} />
               ) : s.section === "regression" ? (
                 <RegressionSection model={model} company={s.company} />
               ) : s.section === "valuation" ? (
-                <ValuationSection company={s.company} rows={rows} multiples={multiples.data?.companies} />
+                <ValuationSection
+                  company={s.company}
+                  rows={rows}
+                  multiples={multiples.data?.companies}
+                  multiplesPeriod={multiplesKey}
+                  onMultiplesPeriod={(mp) => set({ mp })}
+                />
               ) : s.section === "multiples" ? (
                 <MultiplesSection
                   data={multiples.data?.companies}
                   error={multiples.error ? String(multiples.error.message ?? multiples.error) : null}
                   company={s.company}
-                  period={period!}
-                  periodLabel={s.period}
+                  period={multiplesPeriod}
+                  periodLabel={multiplesKey}
                   live={liveBy[s.company]}
                   priceOn={priceOnBy[s.company]}
                 />

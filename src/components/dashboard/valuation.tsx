@@ -10,6 +10,7 @@ import {
   GOLD_AT_OPTIONS,
   MULTIPLE_METHODS,
   PERIOD_OPTIONS,
+  periodOf,
   SCENARIOS,
   type CompanyInputs,
   type InputField,
@@ -214,11 +215,17 @@ export function ValuationSection({
   company,
   rows,
   multiples,
+  multiplesPeriod,
+  onMultiplesPeriod,
 }: {
   company: CompanyKey;
   /** Aligned sessions with today's live point (if any) on the end. */
   rows: AlignedRow[];
   multiples: MultiplesData | null | undefined;
+  /** The multiples window, shared with the Multiples tab (the dashboard holds it). */
+  multiplesPeriod: PeriodKey;
+  /** Picks a window for this view; null goes back to the saved default. */
+  onMultiplesPeriod: (key: PeriodKey | null) => void;
 }) {
   const co = COMPANIES.find((c) => c.key === company)!;
   const { data, error, mutate } = useSWR<ValuationModelData>("/api/valuation-model", fetchJson, { revalidateOnFocus: false });
@@ -230,7 +237,10 @@ export function ValuationSection({
   const editable = Boolean(secret) && Boolean(data);
 
   const saved = data?.settings;
-  const settings: ValuationSettings | null = useMemo(() => (saved ? { ...saved, ...local, weights: { ...saved.weights, ...local.weights } } : null), [saved, local]);
+  const settings: ValuationSettings | null = useMemo(
+    () => (saved ? { ...saved, ...local, multiplesPeriod, weights: { ...saved.weights, ...local.weights } } : null),
+    [saved, local, multiplesPeriod]
+  );
   const inputs: CompanyInputs = useMemo(() => data?.inputs[company] ?? {}, [data, company]);
   const last = rows.at(-1);
   const cmp = last ? last[company] : null;
@@ -240,10 +250,10 @@ export function ValuationSection({
   const series = useMemo(() => (multiples ? companySeries(multiples[company], last?.live && cmp ? { date: last.date, price: cmp } : null) : []), [multiples, company, last, cmp]);
   const bandFor = useCallback(
     (m: Metric) => {
-      const v = metricView(series, m, { kind: "months", months: 36 }, () => cmp);
+      const v = metricView(series, m, periodOf(multiplesPeriod), () => cmp);
       return v ? { mean: v.bands.mean, sd: v.bands.sd, current: v.bands.current } : null;
     },
-    [series, cmp]
+    [series, cmp, multiplesPeriod]
   );
   const band = settings ? bandFor(settings.multiple) : null;
 
@@ -278,6 +288,7 @@ export function ValuationSection({
       await post({ settings });
       await mutate();
       setLocal({});
+      onMultiplesPeriod(null);
       setMsg({ tone: "ok", text: "Saved as the default for everyone." });
     } catch (err) {
       setMsg({ tone: "bad", text: err instanceof Error ? err.message : "Save failed" });
@@ -292,7 +303,7 @@ export function ValuationSection({
   const def = MULTIPLE_METHODS[settings.multiple];
   const block = table.block;
   const set = (patch: Partial<ValuationSettings>) => setLocal((s) => ({ ...s, ...patch }));
-  const dirty = Object.keys(local).length > 0;
+  const dirty = Object.keys(local).length > 0 || multiplesPeriod !== saved?.multiplesPeriod;
   const anchor = multiples?.[company].anchor ?? null;
 
   const methodRows: { key: MethodKey; name: string; how: string }[] = [
@@ -314,7 +325,7 @@ export function ValuationSection({
       key: "multiple",
       name: def.name,
       how: `FY28E ${def.income.split(" FY28E")[0].toLowerCase()} × target ${METRIC_LABELS[settings.multiple].short} ÷ shares, discounted 2 periods (FY27, FY26 rates)${
-        SCENARIOS.some((k) => block.fromBand[k]) ? "; blank multiples use the 3Y −1 SD / Mean / +1 SD" : ""
+        SCENARIOS.some((k) => block.fromBand[k]) ? `; blank multiples use the ${multiplesPeriod} −1 SD / Mean / +1 SD` : ""
       }${block.perShare === null ? " — enter the FY28E inputs above" : ""}`,
     },
   ];
@@ -448,15 +459,19 @@ export function ValuationSection({
             </table>
           </div>
           <div className="vs-block">
+            <div className="flex flex-wrap items-center gap-2" style={{ marginBottom: 6 }}>
+              <span className="gn-lbl">Multiples period</span>
+              <Seg value={multiplesPeriod} options={PERIOD_SEG} onChange={(v: PeriodKey) => onMultiplesPeriod(v)} label="Multiples period" />
+            </div>
             <p className="vs-cap">
-              <b>Today, for reference</b> TTM consolidated (Ace Equity, price-updated) and each multiple&apos;s 3Y band
+              <b>Today, for reference</b> TTM consolidated (Ace Equity, price-updated) and each multiple&apos;s {multiplesPeriod} band · same window as the Multiples tab
             </p>
             <table className="vs-t">
               <thead>
                 <tr>
                   <th scope="col">Multiple</th>
                   <th scope="col">Current</th>
-                  <th scope="col">3Y −1 SD / Mean / +1 SD</th>
+                  <th scope="col">{multiplesPeriod} −1 SD / Mean / +1 SD</th>
                   <th scope="col">Per share (TTM)</th>
                 </tr>
               </thead>
@@ -483,8 +498,8 @@ export function ValuationSection({
         </div>
         <p className="aa-note" style={{ padding: "0 12px 12px" }}>
           {editable
-            ? "Blue cells save straight away. Grey multiples are the 3Y −1 SD / Mean / +1 SD of the chosen multiple; type to override, clear to go back to the band."
-            : "Unlock with the admin password to edit. Grey italic multiples are the 3Y −1 SD / Mean / +1 SD of the chosen multiple (used until one is typed)."}{" "}
+            ? `Blue cells save straight away. Grey multiples are the ${multiplesPeriod} −1 SD / Mean / +1 SD of the chosen multiple; type to override, clear to go back to the band.`
+            : `Unlock with the admin password to edit. Grey italic multiples are the ${multiplesPeriod} −1 SD / Mean / +1 SD of the chosen multiple (used until one is typed).`}{" "}
           Shares and discount rates are shared by all three multiples; each multiple keeps its own FY28E figure and targets. Upsides use{" "}
           {cmpIsLive ? "today's live price" : "the last close"}.
         </p>
@@ -673,7 +688,14 @@ export function ValuationSection({
                   {dirty && (
                     <>
                       {" "}
-                      <button type="button" className="aa-btn aa-btn--ghost" onClick={() => setLocal({})}>
+                      <button
+                        type="button"
+                        className="aa-btn aa-btn--ghost"
+                        onClick={() => {
+                          setLocal({});
+                          onMultiplesPeriod(null);
+                        }}
+                      >
                         Back to saved
                       </button>
                     </>

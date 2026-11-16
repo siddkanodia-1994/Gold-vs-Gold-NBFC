@@ -70,6 +70,7 @@ export const PERIOD_OPTIONS = [
   { key: "1Y", months: 12 },
   { key: "2Y", months: 24 },
   { key: "3Y", months: 36 },
+  { key: "4Y", months: 48 },
   { key: "5Y", months: 60 },
   { key: "All", months: null },
 ] as const;
@@ -77,6 +78,8 @@ export type PeriodKey = (typeof PERIOD_OPTIONS)[number]["key"];
 
 export interface ValuationSettings {
   multiple: Metric;
+  /** Window for the multiples' mean and SD: the Multiples tab, the reference table and blank-multiple fallbacks. */
+  multiplesPeriod: PeriodKey;
   ratioPeriod: PeriodKey;
   ratioGoldDays: number;
   ratioGoldAt: number;
@@ -89,6 +92,7 @@ export interface ValuationSettings {
 
 export const DEFAULT_SETTINGS: ValuationSettings = {
   multiple: "pbv",
+  multiplesPeriod: "3Y",
   ratioPeriod: "3Y",
   ratioGoldDays: 1,
   ratioGoldAt: 1,
@@ -117,6 +121,7 @@ export function validSettings(v: unknown): v is ValuationSettings {
     !!s &&
     ["pbv", "pe", "mcapSales"].includes(s.multiple) &&
     periods.includes(s.ratioPeriod) &&
+    periods.includes(s.multiplesPeriod) &&
     periods.includes(s.bestFitPeriod) &&
     isInt(s.ratioGoldDays, 1, 250) &&
     isInt(s.bestFitGoldDays, 1, 250) &&

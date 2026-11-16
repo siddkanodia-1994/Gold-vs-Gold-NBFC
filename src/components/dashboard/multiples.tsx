@@ -272,11 +272,14 @@ export function MultiplesSection({
 export function MultiplesSnapshot({
   data,
   period,
+  periodKey,
   live,
   priceOn,
 }: {
   data: MultiplesData | null | undefined;
   period: Period;
+  /** The multiples window's label (shared with the Multiples tab). */
+  periodKey: string;
   live: Record<CompanyKey, { date: string; price: number } | null>;
   priceOn: Record<CompanyKey, (date: string) => number | null>;
 }) {
@@ -296,7 +299,7 @@ export function MultiplesSnapshot({
       <table className="gn-grid-t">
         <thead>
           <tr>
-            <th>Valuation multiples (TTM, consolidated)</th>
+            <th>Valuation multiples (TTM, consolidated · {periodKey} window)</th>
             <th>Muthoot</th>
             <th>Manappuram</th>
           </tr>
