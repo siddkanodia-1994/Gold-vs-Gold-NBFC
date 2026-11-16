@@ -71,11 +71,15 @@ function Takeaways({ model, opt, lookbackMonths }: { model: Model; opt: Optimise
   );
 }
 
+type Row = [label: string, a: string, b: string];
+
+// The regression table's first six rows mirror the ratio table's, so the two
+// bold upside rows sit side by side; the fit details follow underneath.
 function SnapshotTable({ model }: { model: Model }) {
   const [mu, ma] = [model.ratio.muthoot, model.ratio.manappuram];
   const [gm, ga] = [model.reg.muthoot, model.reg.manappuram];
   const gl = goldLabel(model.avgDays);
-  const row = (label: string, a: string, b: string, bold = false) => (
+  const row = ([label, a, b]: Row, bold = false) => (
     <tr key={label} style={bold ? { fontWeight: 700 } : undefined}>
       <th scope="row" style={bold ? { fontWeight: 700 } : undefined}>
         {label}
@@ -93,22 +97,20 @@ function SnapshotTable({ model }: { model: Model }) {
       </tr>
     </thead>
   );
+  if (!mu || !ma || !gm || !ga) return null;
+  const goldRow: Row = [`Latest ${gl}`, inr(mu.current.avgGold), inr(ma.current.avgGold)];
   return (
     <div className="gn-2col">
       <div className="gn-scroll">
         <table className="gn-grid-t">
           {head(`Ratio analysis (price ÷ ${gl})`)}
           <tbody>
-            {mu && ma && (
-              <>
-                {row("Latest share price", inr(mu.current.price, 2), inr(ma.current.price, 2))}
-                {row(`Latest ${gl}`, inr(mu.current.avgGold), inr(ma.current.avgGold))}
-                {row("Current ratio", mu.current.ratio.toFixed(6), ma.current.ratio.toFixed(6))}
-                {row("Current z-score (SDs from mean)", zText(mu.z), zText(ma.z))}
-                {row("Price at mean ratio (fair value)", inr(mu.fairValue), inr(ma.fairValue, 2))}
-                {row("Upside / (downside) to mean-ratio price", pct(mu.upsideToFair), pct(ma.upsideToFair), true)}
-              </>
-            )}
+            {row(["Latest share price", inr(mu.current.price, 2), inr(ma.current.price, 2)])}
+            {row(goldRow)}
+            {row(["Current ratio", mu.current.ratio.toFixed(6), ma.current.ratio.toFixed(6)])}
+            {row(["Current z-score (SDs from mean)", zText(mu.z), zText(ma.z)])}
+            {row(["Price at mean ratio (fair value)", inr(mu.fairValue), inr(ma.fairValue, 2)])}
+            {row(["Upside / (downside) to mean-ratio price", pct(mu.upsideToFair), pct(ma.upsideToFair)], true)}
           </tbody>
         </table>
       </div>
@@ -116,20 +118,17 @@ function SnapshotTable({ model }: { model: Model }) {
         <table className="gn-grid-t">
           {head(`Regression (price = a + b × ${gl})`)}
           <tbody>
-            {gm && ga && (
-              <>
-                {row("Slope (b)", gm.fit.slope.toFixed(6), ga.fit.slope.toFixed(6))}
-                {row("Intercept (a)", num(gm.fit.intercept, 2), num(ga.fit.intercept, 2))}
-                {row("R²", r3(gm.fit.r2), r3(ga.fit.r2))}
-                {row("Correlation", r3(gm.fit.r), r3(ga.fit.r))}
-                {row("Fitted price (latest)", inr(gm.current.fitted, 2), inr(ga.current.fitted, 2))}
-                {row("Actual price (latest)", inr(gm.current.y, 2), inr(ga.current.y, 2))}
-                {row("Residual (actual − fitted)", inr(gm.residual, 2), inr(ga.residual, 2))}
-                {row("Upside / (downside) to fitted price", pct(gm.current.retToFit), pct(ga.current.retToFit))}
-                {row("Std error of regression", inr(gm.fit.steyx, 2), inr(ga.fit.steyx, 2))}
-                {row("Residual z (residual ÷ std error)", zText(gm.residualZ), zText(ga.residualZ))}
-              </>
-            )}
+            {row(["Actual price (latest)", inr(gm.current.y, 2), inr(ga.current.y, 2)])}
+            {row(goldRow)}
+            {row(["R²", r3(gm.fit.r2), r3(ga.fit.r2)])}
+            {row(["Residual z (residual ÷ std error)", zText(gm.residualZ), zText(ga.residualZ)])}
+            {row(["Fitted price (fair value)", inr(gm.current.fitted, 2), inr(ga.current.fitted, 2)])}
+            {row(["Upside / (downside) to fitted price", pct(gm.current.retToFit), pct(ga.current.retToFit)], true)}
+            {row(["Slope (b)", gm.fit.slope.toFixed(6), ga.fit.slope.toFixed(6)])}
+            {row(["Intercept (a)", num(gm.fit.intercept, 2), num(ga.fit.intercept, 2)])}
+            {row(["Correlation", r3(gm.fit.r), r3(ga.fit.r)])}
+            {row(["Residual (actual − fitted)", inr(gm.residual, 2), inr(ga.residual, 2)])}
+            {row(["Std error of regression", inr(gm.fit.steyx, 2), inr(ga.fit.steyx, 2)])}
           </tbody>
         </table>
       </div>
