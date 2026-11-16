@@ -59,9 +59,14 @@ export function metricView(points: MultiplePoint[], metric: Metric, period: Peri
   return { rows, bands, price: priceOn(rows[rows.length - 1].date) };
 }
 
-/** Price at band k: the band multiple × the per-share figure behind today's multiple. */
+/**
+ * Price at band k: the band multiple × the per-share figure behind today's
+ * multiple. Null (shown "n/m") when the band is at or below zero, which a
+ * spiky series' −2 SD can be.
+ */
 export function bandPrice(v: MetricView, k: number): number | null {
-  return v.price && v.bands.current > 0 ? (bandValue(v.bands, k) / v.bands.current) * v.price : null;
+  const band = bandValue(v.bands, k);
+  return v.price && v.bands.current > 0 && band > 0 ? (band / v.bands.current) * v.price : null;
 }
 
 function TooltipRow({ color, label, value, dashed }: { color: string; label: string; value: string; dashed?: boolean }) {
@@ -186,7 +191,7 @@ function ImpliedPriceTable({ view, metric }: { view: MetricView; metric: Metric 
                 {LADDER_LABEL[k]}
               </th>
               <td>{bandValue(view.bands, k).toFixed(2)}</td>
-              <td>{price === null ? "—" : inr(price, price < 1000 ? 2 : 0)}</td>
+              <td>{price === null ? (bandValue(view.bands, k) <= 0 ? "n/m" : "—") : inr(price, price < 1000 ? 2 : 0)}</td>
               <td>{price === null || !view.price ? "—" : <Pct change={price / view.price - 1} />}</td>
             </tr>
           );

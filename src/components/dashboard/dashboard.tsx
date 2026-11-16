@@ -365,7 +365,9 @@ export function Dashboard() {
                 {isDefault ? (
                   <span className="text-xs text-[var(--pl-color-text-muted)]">
                     {s.section === "multiples" ? "Default view (3Y)" : "Default view (3Y · 1D spot gold)"}
-                    {model ? ` · ${model.span.endIdx - model.span.startIdx + 1} sessions, ${dayLabel(model.span.start)} → ${dayLabel(model.span.end)}` : ""}
+                    {model && s.section !== "multiples"
+                      ? ` · ${model.span.endIdx - model.span.startIdx + 1} sessions, ${dayLabel(model.span.start)} → ${dayLabel(model.span.end)}`
+                      : ""}
                   </span>
                 ) : (
                   <button type="button" className="aa-btn aa-btn--ghost" onClick={() => apply({ months: 36, avgDays: DEFAULT_AVG })}>
