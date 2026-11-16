@@ -4,6 +4,8 @@ import "../dashboard/dashboard.css";
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { dayLabel, inr } from "../dashboard/format";
+import { parseAceRows } from "@/lib/multiples/parse-ace";
+import type { MultipleRow } from "@/lib/multiples/types";
 
 const SECRET_KEY = "gold-nbfc-admin-secret";
 
@@ -18,6 +20,7 @@ interface Status {
   muthoot: { date: string; price: number } | null;
   manappuram: { date: string; price: number } | null;
   missingGold: string[];
+  multiples: Record<string, { ace: number; derived: number; lastAce: string | null; last: string | null }> | null;
 }
 
 interface PreviewRow {
@@ -158,6 +161,7 @@ export function AdminPanel() {
         <div className="gn-stack">
           <StatusCard status={status} />
           <GoldUpload call={call} busy={busy} run={run} />
+          <AceUpload call={call} busy={busy} run={run} />
           <ManualGold call={call} busy={busy} run={run} />
           <DhanCard status={status} call={call} busy={busy} run={run} />
           <SyncCard call={call} busy={busy} run={run} />
@@ -204,6 +208,16 @@ function StatusCard({ status }: { status: Status | null }) {
           <tr>
             <th>Sessions still on carried-forward gold (last 45 days)</th>
             <td>{status.missingGold.length ? status.missingGold.map((d) => dayLabel(d, false)).join(", ") : "none"}</td>
+          </tr>
+          <tr>
+            <th>Multiples (PE, P/BV, Mcap/Sales)</th>
+            <td>
+              {status.multiples
+                ? Object.entries(status.multiples)
+                    .map(([k, v]) => `${k}: Ace ${v.ace} days to ${v.lastAce ? dayLabel(v.lastAce, false) : "—"}, ${v.derived} price-updated to ${v.last ? dayLabel(v.last, false) : "—"}`)
+                    .join(" · ")
+                : "not set up — run setup"}
+            </td>
           </tr>
         </tbody>
       </table>
@@ -283,6 +297,75 @@ function GoldUpload({ call, busy, run }: { call: Call; busy: string | null; run:
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+interface AcePreview {
+  rows: MultipleRow[];
+  errors: string[];
+  byCompany: { company: string; n: number; from: string; to: string }[];
+}
+
+function AceUpload({ call, busy, run }: { call: Call; busy: string | null; run: Run }) {
+  const [preview, setPreview] = useState<AcePreview | null>(null);
+  const [fileName, setFileName] = useState("");
+
+  async function onFile(file: File | undefined) {
+    setPreview(null);
+    if (!file) return;
+    setFileName(file.name);
+    // SheetJS is loaded only when a file is picked.
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const { rows, errors } = parseAceRows(XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: null }) as unknown[][]);
+    const byCompany = [...new Set(rows.map((r) => r.company))].map((company) => {
+      const mine = rows.filter((r) => r.company === company);
+      return { company, n: mine.length, from: mine[0].date, to: mine[mine.length - 1].date };
+    });
+    setPreview({ rows, errors, byCompany });
+  }
+
+  return (
+    <section className="pl-panel" aria-label="Upload Ace Equity multiples">
+      <div className="pl-band">
+        Upload Ace Equity multiples{" "}
+        <span className="pl-band-unit">Query Expression export · Consolidated MCAP NS, Price BV and PE · after each quarter&apos;s results</span>
+      </div>
+      <div className="aa-controls">
+        <input type="file" accept=".xlsx,.xls" onChange={(e) => onFile(e.target.files?.[0])} />
+        {preview && preview.rows.length > 0 && (
+          <button
+            type="button"
+            className="aa-btn"
+            disabled={busy !== null}
+            onClick={() =>
+              run("ace", async () => {
+                const res = await call<{ summary: { company: string; added: number; changed: number; replacedDerived: number; to: string }[] }>("/api/admin/multiples", {
+                  rows: preview.rows,
+                });
+                setPreview(null);
+                return `Saved ${fileName}: ${res.summary
+                  .map((x) => `${x.company} ${x.added} new, ${x.changed} changed, ${x.replacedDerived} price-updated days replaced (to ${dayLabel(x.to)})`)
+                  .join("; ")}. Later days were re-priced on the new TTM figures.`;
+              })
+            }
+          >
+            {busy === "ace" ? "Saving…" : `Save ${preview.rows.length} rows`}
+          </button>
+        )}
+      </div>
+      {preview && (
+        <div style={{ padding: "0 12px 12px" }}>
+          {preview.byCompany.map((c) => (
+            <p key={c.company} className="aa-note" style={{ margin: "2px 0" }}>
+              {c.company}: {c.n} days, {dayLabel(c.from)} → {dayLabel(c.to)}
+            </p>
+          ))}
+          {preview.errors.length > 0 && <p className="aa-warn" style={{ padding: 0 }}>{preview.errors.join(" ")}</p>}
         </div>
       )}
     </section>

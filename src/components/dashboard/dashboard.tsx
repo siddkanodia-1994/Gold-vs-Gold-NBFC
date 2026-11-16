@@ -8,12 +8,13 @@ import { alignRows, withLivePoint, type Period, type RawRow } from "@/lib/analyt
 import { COMPANIES, type CompanyKey } from "@/lib/instruments";
 import type { LiveResponse } from "@/lib/live-types";
 import { DataSection } from "./data-section";
+import { MultiplesSection, MultiplesSnapshot, type MultiplesData } from "./multiples";
 import { dayLabel, inr, pct, toneOf } from "./format";
 import { buildModel } from "./model";
 import { RatioSection, RegressionSection } from "./sections";
 import { SummarySection } from "./summary";
 
-type Section = "summary" | "ratio" | "regression" | "data";
+type Section = "summary" | "ratio" | "regression" | "multiples" | "data";
 
 const SECTIONS: { key: Section; label: string; icon: ReactNode }[] = [
   {
@@ -43,6 +44,15 @@ const SECTIONS: { key: Section; label: string; icon: ReactNode }[] = [
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />
+      </svg>
+    ),
+  },
+  {
+    key: "multiples",
+    label: "Multiples",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 20h18M6 16V9M11 16V5M16 16v-5M21 16V7" />
       </svg>
     ),
   },
@@ -150,6 +160,8 @@ export function Dashboard() {
     revalidateOnFocus: true,
   });
 
+  const multiples = useSWR<{ companies: MultiplesData | null }>("/api/multiples", fetchJson, { revalidateOnFocus: false, refreshInterval: 15 * 60_000 });
+
   const rows = useMemo(() => {
     if (!history.data) return null;
     const aligned = alignRows(history.data.rows);
@@ -176,6 +188,25 @@ export function Dashboard() {
   }, [history.data]);
   const lastRow = rows?.at(-1);
   const today = live.data?.asOf ? new Date(Date.parse(live.data.asOf) + 5.5 * 3600_000).toISOString().slice(0, 10) : null;
+
+  // Per company: today's live price (for the multiples' live point) and the close on any date.
+  const liveBy = useMemo(() => {
+    const q = live.data?.quotes;
+    return Object.fromEntries(COMPANIES.map((c) => [c.key, q?.[c.key] ? { date: q[c.key]!.date, price: q[c.key]!.price } : null])) as Record<
+      CompanyKey,
+      { date: string; price: number } | null
+    >;
+  }, [live.data]);
+  const priceOnBy = useMemo(() => {
+    const out = {} as Record<CompanyKey, (date: string) => number | null>;
+    for (const c of COMPANIES) {
+      const f = c.key === "muthoot" ? "mu" : "ma";
+      const m = new Map((history.data?.rows ?? []).flatMap((r) => (r[f] !== undefined ? [[r.d, r[f]!] as const] : [])));
+      const lv = liveBy[c.key];
+      out[c.key] = (date) => (lv && lv.date === date ? lv.price : (m.get(date) ?? null));
+    }
+    return out;
+  }, [history.data, liveBy]);
 
   function apply({ months, avgDays: n }: { months?: number; avgDays?: number }) {
     const p = months === undefined ? undefined : PERIODS.find((x) => x.months === months)?.key;
@@ -318,7 +349,7 @@ export function Dashboard() {
                     <input type="date" className="gn-date" aria-label="To" value={s.to} min={rows[0].date} max={rows.at(-1)!.date} onChange={(e) => set({ to: e.target.value })} />
                   </span>
                 )}
-                <label className="gn-lbl">
+                <label className="gn-lbl" hidden={s.section === "multiples"}>
                   Gold avg (days)
                   <input
                     type="number"
@@ -333,7 +364,7 @@ export function Dashboard() {
                 <span className="aa-fitbar-sep" aria-hidden />
                 {isDefault ? (
                   <span className="text-xs text-[var(--pl-color-text-muted)]">
-                    Default view (3Y · 1D spot gold)
+                    {s.section === "multiples" ? "Default view (3Y)" : "Default view (3Y · 1D spot gold)"}
                     {model ? ` · ${model.span.endIdx - model.span.startIdx + 1} sessions, ${dayLabel(model.span.start)} → ${dayLabel(model.span.end)}` : ""}
                   </span>
                 ) : (
@@ -343,7 +374,7 @@ export function Dashboard() {
                 )}
               </div>
 
-              {lastRow && lastRow.goldDate !== lastRow.date && (
+              {s.section !== "multiples" && lastRow && lastRow.goldDate !== lastRow.date && (
                 <p className="gn-warn">
                   {dayLabel(lastRow.date)} is priced on Gold M spot from {dayLabel(lastRow.goldDate)} — upload the latest MCX Spot Market file on /admin to update it.
                 </p>
@@ -352,11 +383,26 @@ export function Dashboard() {
               {!model ? (
                 <p className="aa-note">{s.period === "Custom" ? "Pick a From and To date (From before To)." : "No sessions in this window."}</p>
               ) : s.section === "summary" ? (
-                <SummarySection model={model} lookbackMonths={lookbackMonths} apply={apply} />
+                <SummarySection
+                  model={model}
+                  lookbackMonths={lookbackMonths}
+                  apply={apply}
+                  multiples={period && <MultiplesSnapshot data={multiples.data?.companies} period={period} live={liveBy} priceOn={priceOnBy} />}
+                />
               ) : s.section === "ratio" ? (
                 <RatioSection model={model} company={s.company} />
               ) : s.section === "regression" ? (
                 <RegressionSection model={model} company={s.company} />
+              ) : s.section === "multiples" ? (
+                <MultiplesSection
+                  data={multiples.data?.companies}
+                  error={multiples.error ? String(multiples.error.message ?? multiples.error) : null}
+                  company={s.company}
+                  period={period!}
+                  periodLabel={s.period}
+                  live={liveBy[s.company]}
+                  priceOn={priceOnBy[s.company]}
+                />
               ) : (
                 <DataSection model={model} />
               )}

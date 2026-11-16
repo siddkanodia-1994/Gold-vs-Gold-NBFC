@@ -23,6 +23,17 @@ export async function ensureTables(): Promise<void> {
       value text not null,
       updated_at timestamptz not null default now()
     )`);
+  await db.execute(sql`
+    create table if not exists multiple_daily (
+      company varchar(16) not null,
+      date date not null,
+      pe double precision,
+      pbv double precision,
+      mcap_sales double precision,
+      source varchar(8) not null,
+      updated_at timestamptz not null default now(),
+      primary key (company, date)
+    )`);
 }
 
 /** Loads the workbook history, but only into an empty table so it never overwrites newer data. */

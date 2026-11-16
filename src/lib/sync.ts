@@ -1,6 +1,7 @@
 import { fetchDailyCloses } from "./dhan/client";
 import { getDhanCredentials } from "./dhan/token";
 import { COMPANIES } from "./instruments";
+import { refreshDerived } from "./multiples/store";
 import { upsertShares } from "./prices";
 
 export interface SyncResult {
@@ -8,6 +9,8 @@ export interface SyncResult {
   to: string;
   days: number;
   latest: string | null;
+  /** Price-updated multiples stored after the sync, or why that step failed. */
+  multiples: string;
 }
 
 /** Pulls both stocks' daily closes from DHAN for [from, to] and stores them. */
@@ -23,5 +26,14 @@ export async function syncShareCloses(from: string, to: string): Promise<SyncRes
   }
   const rows = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
   await upsertShares(rows, "dhan");
-  return { from, to, days: rows.length, latest: rows.at(-1)?.date ?? null };
+  let multiples: string;
+  try {
+    const r = await refreshDerived();
+    multiples = Object.entries(r)
+      .map(([k, v]) => (v.anchor ? `${k}: ${v.derived} day(s) after ${v.anchor}` : `${k}: no Ace data yet`))
+      .join("; ");
+  } catch (err) {
+    multiples = `not refreshed (${err instanceof Error ? err.message : "error"})`;
+  }
+  return { from, to, days: rows.length, latest: rows.at(-1)?.date ?? null, multiples };
 }

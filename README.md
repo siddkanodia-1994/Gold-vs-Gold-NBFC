@@ -10,6 +10,9 @@ the AMC Analytics Ratio / Regression tabs.
   price at each band.
 - **Regression**: price = a + b × N-day avg gold, with actual vs model, residual z (÷ STEYX), return to best fit
   with its SD bands, and the scatter.
+- **Multiples**: consolidated TTM PE, P/BV and Mcap/Sales band charts (mean, ±1/±2 SD over the window,
+  sample SD as in the AMC dashboard) with the implied share price at each band; the Summary adds a multiples
+  snapshot table.
 - **Daily Data**: the window's sessions with a CSV download.
 
 The toolbar sets the period (6M–5Y, All, Custom dates) and the gold average (1–250 days); the view is kept in
@@ -27,6 +30,9 @@ The calculations reproduce the workbook to the decimal: `npm test` checks them a
 | Live share prices | DHAN quote API, cached 30 s | the page polls every minute in market hours |
 | History to 08-Nov-26 | `data/seed-history.json`, exported from the workbook by `scripts/export-excel-seed.py` | once |
 
+| PE, P/BV, Mcap/Sales | Ace Equity "Query Expression" export uploaded on `/admin` (stored in Neon, never committed — licensed data) | after each quarter's results |
+| Multiples after the last Ace day | TTM EPS, BV/share and sales/share backed out of the last 5 Ace days (median, same quarter), held, and divided into each DHAN close; stored daily by the cron, replaced by the next Ace file | daily |
+
 A session with no gold of its own uses the latest earlier gold (as the workbook does for weekend sessions);
 the page flags it until that day's spot is uploaded.
 
@@ -36,6 +42,9 @@ the page flags it until that day's spot is uploaded.
    DHAN credentials → Test & save.
 2. **Gold**: mcxindia.com → Market Data → Spot Market → GOLDM → download → `/admin` → Upload MCX Gold M spot →
    check the preview → Save. The file can cover many days; only new or changed days are written.
+3. **Multiples** (after each company's quarterly results): export the Ace Equity Query Expression (Consolidated
+   MCAP NS, Price BV, PE) → `/admin` → Upload Ace Equity multiples → Save. Until then the dashboard shows an
+   amber note once a quarter-end has passed since the last file.
 
 ## Setup
 

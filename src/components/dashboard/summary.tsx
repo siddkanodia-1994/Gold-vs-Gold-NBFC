@@ -204,7 +204,18 @@ function R2Grid({
   );
 }
 
-export function SummarySection({ model, lookbackMonths, apply }: { model: Model; lookbackMonths: number | null; apply: ApplySettings }) {
+export function SummarySection({
+  model,
+  lookbackMonths,
+  apply,
+  multiples,
+}: {
+  model: Model;
+  lookbackMonths: number | null;
+  apply: ApplySettings;
+  /** The valuation-multiples snapshot table, shown under the ratio and regression ones. */
+  multiples?: React.ReactNode;
+}) {
   const opt = useMemo(() => computeOptimiser(model.rows, model.span, model.avgDays), [model]);
   const [gridCo, setGridCo] = useState<CompanyKey>("muthoot");
   const sessions = model.span.endIdx - model.span.startIdx + 1;
@@ -225,6 +236,7 @@ export function SummarySection({ model, lookbackMonths, apply }: { model: Model;
         </div>
         <div style={{ padding: 12 }}>
           <SnapshotTable model={model} />
+          {multiples}
         </div>
       </section>
 

@@ -3,6 +3,7 @@ import { alignRows } from "@/lib/analytics/series";
 import { addDays, istDate, isWeekday } from "@/lib/dates";
 import { hasDatabase } from "@/lib/db/client";
 import { getDhanStatus } from "@/lib/dhan/token";
+import { multiplesStatus } from "@/lib/multiples/store";
 import { loadHistory } from "@/lib/prices";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ export async function GET(request: Request) {
       muthoot: lastOf("mu") ? { date: lastOf("mu")!.d, price: lastOf("mu")!.mu } : null,
       manappuram: lastOf("ma") ? { date: lastOf("ma")!.d, price: lastOf("ma")!.ma } : null,
       missingGold,
+      multiples: hasDatabase() ? await multiplesStatus().catch(() => null) : null,
     });
   } catch (err) {
     return adminError(err);
