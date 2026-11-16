@@ -34,6 +34,12 @@ export async function ensureTables(): Promise<void> {
       updated_at timestamptz not null default now(),
       primary key (company, date)
     )`);
+  await db.execute(sql`
+    create table if not exists valuation_model (
+      key text primary key,
+      value text not null,
+      updated_at timestamptz not null default now()
+    )`);
 }
 
 /** Loads the workbook history, but only into an empty table so it never overwrites newer data. */

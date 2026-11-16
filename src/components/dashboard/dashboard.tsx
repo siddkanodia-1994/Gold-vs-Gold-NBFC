@@ -13,8 +13,9 @@ import { dayLabel, inr, pct, toneOf } from "./format";
 import { buildModel } from "./model";
 import { RatioSection, RegressionSection } from "./sections";
 import { SummarySection } from "./summary";
+import { ValuationSection } from "./valuation";
 
-type Section = "summary" | "ratio" | "regression" | "multiples" | "data";
+type Section = "summary" | "ratio" | "regression" | "multiples" | "valuation" | "data";
 
 const SECTIONS: { key: Section; label: string; icon: ReactNode }[] = [
   {
@@ -53,6 +54,15 @@ const SECTIONS: { key: Section; label: string; icon: ReactNode }[] = [
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M3 20h18M6 16V9M11 16V5M16 16v-5M21 16V7" />
+      </svg>
+    ),
+  },
+  {
+    key: "valuation",
+    label: "Valuation Model",
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2l9 5v10l-9 5-9-5V7z" />
       </svg>
     ),
   },
@@ -326,7 +336,7 @@ export function Dashboard() {
                 </div>
               )}
 
-              <div className="aa-fitbar" role="toolbar" aria-label="Period and gold average">
+              <div className="aa-fitbar" role="toolbar" aria-label="Period and gold average" hidden={s.section === "valuation"}>
                 <div className="gn-seg" role="group" aria-label="Period">
                   {PERIODS.map((p) => (
                     <button key={p.key} type="button" aria-pressed={p.key === s.period} onClick={() => set({ period: p.key })}>
@@ -395,6 +405,8 @@ export function Dashboard() {
                 <RatioSection model={model} company={s.company} />
               ) : s.section === "regression" ? (
                 <RegressionSection model={model} company={s.company} />
+              ) : s.section === "valuation" ? (
+                <ValuationSection company={s.company} rows={rows} multiples={multiples.data?.companies} />
               ) : s.section === "multiples" ? (
                 <MultiplesSection
                   data={multiples.data?.companies}
