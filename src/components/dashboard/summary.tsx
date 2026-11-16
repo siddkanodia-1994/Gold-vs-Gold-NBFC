@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { AVG_DAYS_GRID, computeOptimiser, LOOKBACK_GRID, type OptimiserResult } from "@/lib/analytics/optimiser";
-import { ratioLevel } from "@/lib/analytics/ratio";
 import { COMPANIES, type CompanyKey } from "@/lib/instruments";
 import { zText } from "./common";
 import { dayLabel, inr, num, pct } from "./format";
@@ -76,9 +75,11 @@ function SnapshotTable({ model }: { model: Model }) {
   const [mu, ma] = [model.ratio.muthoot, model.ratio.manappuram];
   const [gm, ga] = [model.reg.muthoot, model.reg.manappuram];
   const gl = goldLabel(model.avgDays);
-  const row = (label: string, a: string, b: string) => (
-    <tr key={label}>
-      <th scope="row">{label}</th>
+  const row = (label: string, a: string, b: string, bold = false) => (
+    <tr key={label} style={bold ? { fontWeight: 700 } : undefined}>
+      <th scope="row" style={bold ? { fontWeight: 700 } : undefined}>
+        {label}
+      </th>
       <td>{a}</td>
       <td>{b}</td>
     </tr>
@@ -103,17 +104,9 @@ function SnapshotTable({ model }: { model: Model }) {
                 {row("Latest share price", inr(mu.current.price, 2), inr(ma.current.price, 2))}
                 {row(`Latest ${gl}`, inr(mu.current.avgGold), inr(ma.current.avgGold))}
                 {row("Current ratio", mu.current.ratio.toFixed(6), ma.current.ratio.toFixed(6))}
-                {row("Window mean ratio", mu.mean.toFixed(6), ma.mean.toFixed(6))}
-                {row("Window SD", mu.sd.toFixed(6), ma.sd.toFixed(6))}
-                {row("Z-score (SDs from mean)", zText(mu.z), zText(ma.z))}
-                {row("Band position", mu.band, ma.band)}
-                {row("Percentile in window", pct(mu.percentile, 0, false), pct(ma.percentile, 0, false))}
-                {row("Window min ratio", mu.min.toFixed(6), ma.min.toFixed(6))}
-                {row("Window max ratio", mu.max.toFixed(6), ma.max.toFixed(6))}
-                {row("Price at −1 SD ratio", inr(ratioLevel(mu, -1).price), inr(ratioLevel(ma, -1).price, 2))}
+                {row("Current z-score (SDs from mean)", zText(mu.z), zText(ma.z))}
                 {row("Price at mean ratio (fair value)", inr(mu.fairValue), inr(ma.fairValue, 2))}
-                {row("Price at +1 SD ratio", inr(ratioLevel(mu, 1).price), inr(ratioLevel(ma, 1).price, 2))}
-                {row("Upside / (downside) to mean-ratio price", pct(mu.upsideToFair), pct(ma.upsideToFair))}
+                {row("Upside / (downside) to mean-ratio price", pct(mu.upsideToFair), pct(ma.upsideToFair), true)}
               </>
             )}
           </tbody>
@@ -135,8 +128,6 @@ function SnapshotTable({ model }: { model: Model }) {
                 {row("Upside / (downside) to fitted price", pct(gm.current.retToFit), pct(ga.current.retToFit))}
                 {row("Std error of regression", inr(gm.fit.steyx, 2), inr(ga.fit.steyx, 2))}
                 {row("Residual z (residual ÷ std error)", zText(gm.residualZ), zText(ga.residualZ))}
-                {row("Regression signal", gm.signal, ga.signal)}
-                {row("Return to fit: window mean / SD", `${pct(gm.retMean)} / ${pct(gm.retSd, 1, false)}`, `${pct(ga.retMean)} / ${pct(ga.retSd, 1, false)}`)}
               </>
             )}
           </tbody>
