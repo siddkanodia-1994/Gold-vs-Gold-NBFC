@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
-import { computeCurrentQuarter } from "@/lib/analytics/current-quarter";
+import { useState } from "react";
 import { fromOffset, toOffset, type SummaryDefaults } from "@/lib/summary-defaults";
 import {
   LEDGER_WEEKDAYS,
@@ -91,6 +90,7 @@ export function GoldLedger({
   onSelect,
   hideWeekdays,
   onHideWeekdays,
+  live = null,
 }: {
   model: PeriodLedger;
   title: string;
@@ -99,14 +99,22 @@ export function GoldLedger({
   onSelect: (key: LedgerSelectKey, label: string) => void;
   hideWeekdays: boolean;
   onHideWeekdays: (v: boolean) => void;
+  /** Latest Gold M price, for the Live switch. */
+  live?: { date: string; value: number } | null;
 }) {
   const lists: Record<LedgerPeriodKind, string[]> = { fy: model.fys, q: model.quarters, m: model.months };
+  // Live: the latest quarter and month take today's Gold M price instead of their average to date.
+  const [liveOn, setLiveOn] = useState(false);
+  const isLive = (kind: LedgerPeriodKind, label: string) => liveOn && live !== null && kind !== "fy" && label === lists[kind].at(-1);
+  const periodOf = (kind: LedgerPeriodKind, label: string): LedgerWindow =>
+    isLive(kind, label) ? { value: live!.value, days: 1 } : model.period(kind, label);
 
   const selRows = (kind: LedgerPeriodKind) => {
     const labels = selections[kind];
-    const w0 = model.period(kind, labels[0]);
+    const w0 = periodOf(kind, labels[0]);
     return labels.map((label, r) => {
-      const w = r === 0 ? w0 : model.period(kind, label);
+      const w = r === 0 ? w0 : periodOf(kind, label);
+      const lv = isLive(kind, label);
       return (
         <tr key={`${kind}-${r}`} className={r === 0 ? "pl-cur" : undefined}>
           <td className="pl-c-sel">
@@ -117,7 +125,7 @@ export function GoldLedger({
               onChange={(l) => onSelect({ kind, row: r }, l)}
             />
           </td>
-          <td>
+          <td className={lv ? "gn-live" : undefined} title={lv ? `Live: Gold M ${live!.date}` : undefined}>
             <Num w={w} />
           </td>
           <td className="pl-c-chg">{r === 0 ? null : <Badge change={ledgerChange(w0.value, w.value)} />}</td>
@@ -127,7 +135,7 @@ export function GoldLedger({
     });
   };
 
-  const m0 = model.period("m", selections.m[0]);
+  const m0 = periodOf("m", selections.m[0]);
   const half = model.half(selections.m[0]);
   const last = model.tail(LEDGER_WINDOWS.week);
   const prev = model.tailPrev(LEDGER_WINDOWS.week);
@@ -157,7 +165,13 @@ export function GoldLedger({
     <section className="pl-panel" aria-label={title}>
       <div className="pl-band">
         {title} <span className="pl-band-unit">{unitLine}</span>
-        <label className="pl-band-toggle">
+        {live && (
+          <label className="pl-band-toggle" title={`Latest quarter and month use the latest Gold M price (${live.date}) instead of their average`}>
+            <input type="checkbox" checked={liveOn} onChange={(e) => setLiveOn(e.target.checked)} />
+            Live gold
+          </label>
+        )}
+        <label className={`pl-band-toggle${live ? " gn-band-toggle--next" : ""}`}>
           <input type="checkbox" checked={hideWeekdays} onChange={(e) => onHideWeekdays(e.target.checked)} />
           Hide weekday tables
         </label>
@@ -203,6 +217,7 @@ export function GoldLedger({
             {plainRow("w4", "Mon–Fri Avg (Latest)", latestWeek)}
           </tbody>
         </table>
+
 
         {!hideWeekdays && (
           <>
@@ -324,52 +339,7 @@ export function withSelection(sel: LedgerSelections, key: LedgerSelectKey, label
   return next;
 }
 
-function CurrentQuarterPanel({ model, points }: { model: PeriodLedger; points: LedgerPoint[] }) {
-  const c = useMemo(() => computeCurrentQuarter(model, points), [model, points]);
-  if (!c) return null;
-  const row = (label: string, note: string, value: number, strong = false) => (
-    <tr key={label} className={strong ? "pl-cur" : undefined}>
-      <td>
-        {label}
-        <br />
-        <small style={{ color: "#686b72", fontWeight: 400 }}>{note}</small>
-      </td>
-      <td>
-        <span className="pl-num">{formatLedgerInr(value)}</span>
-      </td>
-      <td className="pl-c-chg">{c.prevAvg !== null ? <Badge change={ledgerChange(value, c.prevAvg)} /> : null}</td>
-      <td className="pl-c-chg">{c.yoyAvg !== null ? <Badge change={ledgerChange(value, c.yoyAvg)} /> : null}</td>
-    </tr>
-  );
-  return (
-    <section className="pl-panel" aria-label="Current quarter">
-      <div className="pl-band">
-        Current quarter · {c.label}{" "}
-        <span className="pl-band-unit">
-          ₹ per 10 g · vs {c.prevLabel ?? "—"} average {formatLedgerInr(c.prevAvg)} and {c.yoyLabel ?? "—"} average {formatLedgerInr(c.yoyAvg)}
-        </span>
-      </div>
-      <div className="pl-row">
-        <table className="pl-period">
-          <colgroup>
-            <col className="pl-col-period" />
-            <col className="pl-col-val" />
-            <col className="pl-col-chg1" />
-            <col className="pl-col-chg2" />
-          </colgroup>
-          <tbody className="pl-sec">
-            <HeaderRow cells={[{ text: c.label }, { text: "₹ / 10 g" }, { text: "QoQ %" }, { text: "YoY %" }]} />
-            {row("Latest spot", c.spot.date, c.spot.value)}
-            {row("Quarter to date avg", `${c.qtd.days} trading days`, c.qtd.value)}
-            {row("Projected quarter avg", `spot held, ~${c.remainingDays} days left`, c.projected, true)}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
-/** The Summary's Gold price view: current quarter, then the ledger over every MCX Gold M spot day (special sessions removed). */
+/** The Summary's Gold price view: the ledger over every MCX Gold M spot day (special sessions removed). */
 export function GoldPriceSummary({
   model,
   points,
@@ -389,7 +359,6 @@ export function GoldPriceSummary({
   if (!last) return <p className="aa-note">No gold prices yet.</p>;
   return (
     <div className="pl-ledger gn-stack">
-      <CurrentQuarterPanel model={model} points={points} />
       <GoldLedger
         model={model}
         title="MCX Gold M spot"
@@ -398,10 +367,11 @@ export function GoldPriceSummary({
         onSelect={onSelect}
         hideWeekdays={hideWeekdays}
         onHideWeekdays={onHideWeekdays}
+        live={last}
       />
       <p className="aa-note">
         Every figure is the average daily Gold M spot over the window (sum of daily values ÷ trading days), Indian FY (April–March). Weekend sessions and Diwali Muhurat
-        days are left out. The projection holds today&apos;s spot for the weekdays left in the quarter (exchange holidays aren&apos;t counted out). Gold is updated from the MCX
+        days are left out. With Live gold on, the latest quarter and month show the latest Gold M price instead of their average, and their changes are worked from it. Gold is updated from the MCX
         Spot Market file uploaded on /admin.
       </p>
     </div>

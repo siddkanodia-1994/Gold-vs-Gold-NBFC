@@ -758,3 +758,7 @@
   .aa .gn-big { font-size: 21px; }
   .aa .vm-t thead th:first-child { width: 34%; }
 }
+/* Live gold switch: the latest quarter / month show today's price. */
+.aa .pl-band .gn-band-toggle--next { margin-left: 14px; }
+.aa .pl-period td.gn-live .pl-num { color: #b0101a; font-weight: 700; }
+.aa .pl-period td.gn-live .pl-num::before { content: "● "; font-size: 9px; vertical-align: 2px; }
