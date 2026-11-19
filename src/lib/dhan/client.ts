@@ -1,5 +1,5 @@
 import { COMPANIES } from "../instruments";
-import { getDhanCredentials, type DhanCredentials } from "./token";
+import { getDhanCredentials, tokenClaims, type DhanCredentials } from "./token";
 
 const QUOTE_URL = "https://api.dhan.co/v2/marketfeed/quote";
 const HISTORICAL_URL = "https://api.dhan.co/v2/charts/historical";
@@ -7,6 +7,30 @@ const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
 function headers(c: DhanCredentials): HeadersInit {
   return { "access-token": c.token, "client-id": c.clientId, "Content-Type": "application/json", Accept: "application/json" };
+}
+
+function istStamp(d: Date): string {
+  return d.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }) + " IST";
+}
+
+/** Fails fast, with the time, when the token's own expiry has passed — no point asking DHAN. */
+function assertNotExpired(c: DhanCredentials): void {
+  const { expiresAt } = tokenClaims(c.token);
+  if (expiresAt && expiresAt.getTime() <= Date.now()) throw new Error(`DHAN token expired ${istStamp(expiresAt)} — paste a new one on /admin.`);
+}
+
+// DHAN's 401/403 bodies look like {"data":{"808":"Authentication Failed - Client ID or Token invalid"},"status":"failed"}
+// or {"errorCode":"DH-901","errorMessage":"..."}.
+function rejection(body: string): Error {
+  let reason = "";
+  try {
+    const json = JSON.parse(body) as { data?: Record<string, unknown>; errorCode?: string; errorMessage?: string };
+    if (json.errorCode || json.errorMessage) reason = [json.errorCode, json.errorMessage].filter(Boolean).join(": ");
+    else if (json.data && typeof json.data === "object") reason = Object.entries(json.data).map(([k, v]) => `${k}: ${String(v)}`).join("; ");
+  } catch {
+    reason = body.slice(0, 200);
+  }
+  return new Error(`DHAN rejected the client ID / token${reason ? ` (${reason})` : ""} — check both, or paste a fresh token on /admin.`);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -42,13 +66,14 @@ function tradeDateOf(text: string | undefined): string | null {
 /** Full quotes (LTP, previous close, last trade time) for both stocks in one request. */
 export async function fetchQuotes(credentials?: DhanCredentials): Promise<Quote[]> {
   const c = credentials ?? (await getDhanCredentials());
+  assertNotExpired(c);
   const res = await fetch(QUOTE_URL, {
     method: "POST",
     headers: headers(c),
     body: JSON.stringify({ NSE_EQ: COMPANIES.map((x) => Number(x.securityId)) }),
     cache: "no-store",
   });
-  if (res.status === 401 || res.status === 403) throw new Error("DHAN rejected the token — it has probably expired. Paste a new one on /admin.");
+  if (res.status === 401 || res.status === 403) throw rejection(await res.text().catch(() => ""));
   if (!res.ok) throw new Error(`DHAN quote request failed (HTTP ${res.status}): ${(await res.text().catch(() => "")).slice(0, 200)}`);
   const json = (await res.json()) as { status?: string; data?: { NSE_EQ?: Record<string, QuoteEntry> } };
   if (json.status !== "success") throw new Error(`DHAN quote request returned status "${json.status}"`);
@@ -74,6 +99,7 @@ export interface HistoricalClose {
 /** Daily closes for one NSE equity over [from, to] (both inclusive). Retries transient failures. */
 export async function fetchDailyCloses(securityId: string, from: string, to: string, credentials?: DhanCredentials): Promise<HistoricalClose[]> {
   const c = credentials ?? (await getDhanCredentials());
+  assertNotExpired(c);
   const toExclusive = new Date(`${to}T00:00:00Z`);
   toExclusive.setUTCDate(toExclusive.getUTCDate() + 1);
   let detail = "";
@@ -96,7 +122,7 @@ export async function fetchDailyCloses(securityId: string, from: string, to: str
       const body = await res.text();
       // DH-905: DHAN has no data for this range (e.g. only holidays).
       if (!res.ok && body.includes("DH-905")) return [];
-      if (res.status === 401 || res.status === 403) throw new Error("DHAN rejected the token — it has probably expired. Paste a new one on /admin.");
+      if (res.status === 401 || res.status === 403) throw rejection(body);
       if (!res.ok) {
         detail = `HTTP ${res.status}: ${body.slice(0, 200)}`;
       } else {

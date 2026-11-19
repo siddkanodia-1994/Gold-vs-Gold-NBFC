@@ -12,7 +12,7 @@ const SECRET_KEY = "gold-nbfc-admin-secret";
 interface Status {
   database: boolean;
   source: "db" | "seed";
-  dhan: { configured: boolean; clientId: string | null; updatedAt: string | null };
+  dhan: { configured: boolean; clientId: string | null; updatedAt: string | null; expiresAt: string | null };
   rows: number;
   sessions: number;
   firstDate: string | null;
@@ -20,6 +20,8 @@ interface Status {
   muthoot: { date: string; price: number } | null;
   manappuram: { date: string; price: number } | null;
   missingGold: string[];
+  /** When this status was fetched (ms), the "now" for the token's time left. */
+  fetchedAt: number;
   multiples: Record<string, { ace: number; derived: number; lastAce: string | null; last: string | null }> | null;
 }
 
@@ -42,6 +44,18 @@ function readSecret(): string {
 function stamp(iso: string | null): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Kolkata" }) + " IST";
+}
+
+/** "expires 19 Nov, 09:39 IST · in 23 h", flagged once fewer than 3 hours are left. */
+function TokenExpiry({ iso, now, onBand = false }: { iso: string | null; now: number; onBand?: boolean }) {
+  if (!iso) return <>expiry unknown</>;
+  const hours = (Date.parse(iso) - now) / 3_600_000;
+  const left = hours <= 0 ? `expired ${Math.max(1, Math.round(-hours))} h ago` : hours < 1 ? `in ${Math.max(1, Math.round(hours * 60))} min` : `in ${Math.round(hours)} h`;
+  const text = `${hours <= 0 ? "expired" : "expires"} ${stamp(iso)} · ${left}`;
+  if (hours >= 3) return <>{text}</>;
+  // On the red band the warning sits on a white pill so it stays readable.
+  const pill = onBand ? { background: "#fff", padding: "1px 6px", borderRadius: 3 } : {};
+  return <strong style={{ color: hours <= 0 ? "#b0101a" : "var(--pl-color-warning)", ...pill }}>{text}</strong>;
 }
 
 export function AdminPanel() {
@@ -77,7 +91,8 @@ export function AdminPanel() {
 
   const refresh = useCallback(async () => {
     try {
-      setStatus(await call<Status>("/api/admin/status"));
+      const s = await call<Omit<Status, "fetchedAt">>("/api/admin/status");
+      setStatus({ ...s, fetchedAt: Date.now() });
     } catch (err) {
       setMessage({ tone: "bad", text: err instanceof Error ? err.message : "Could not load status" });
     }
@@ -203,7 +218,15 @@ function StatusCard({ status }: { status: Status | null }) {
           </tr>
           <tr>
             <th>DHAN</th>
-            <td>{status.dhan.configured ? `client ${status.dhan.clientId} · token saved ${stamp(status.dhan.updatedAt)}` : "not set"}</td>
+            <td>
+              {status.dhan.configured ? (
+                <>
+                  client {status.dhan.clientId} · token saved {stamp(status.dhan.updatedAt)} · <TokenExpiry iso={status.dhan.expiresAt} now={status.fetchedAt} />
+                </>
+              ) : (
+                "not set"
+              )}
+            </td>
           </tr>
           <tr>
             <th>Sessions still on carried-forward gold (last 45 days)</th>
@@ -411,9 +434,9 @@ function DhanCard({ status, call, busy, run }: { status: Status | null; call: Ca
   function submit(e: FormEvent) {
     e.preventDefault();
     run("dhan", async () => {
-      await call("/api/admin/dhan", { clientId, token });
+      const res = await call<{ expiresAt: string | null }>("/api/admin/dhan", { clientId, token });
       setToken("");
-      return "DHAN credentials tested and saved.";
+      return `DHAN credentials tested and saved${res.expiresAt ? ` — the token expires ${stamp(res.expiresAt)}` : ""}. Every viewer's live prices and the daily sync now use them.`;
     });
   }
   return (
@@ -422,6 +445,12 @@ function DhanCard({ status, call, busy, run }: { status: Status | null; call: Ca
         DHAN credentials{" "}
         <span className="pl-band-unit">
           tokens expire every ~24 h · Dhan Web → Profile → DhanHQ Trading APIs · last saved {stamp(status?.dhan.updatedAt ?? null)}
+          {status?.dhan.configured && (
+            <>
+              {" · "}
+              <TokenExpiry iso={status.dhan.expiresAt} now={status.fetchedAt} onBand />
+            </>
+          )}
         </span>
       </div>
       <form className="aa-controls" onSubmit={submit}>
@@ -438,7 +467,8 @@ function DhanCard({ status, call, busy, run }: { status: Status | null; call: Ca
         </button>
       </form>
       <p className="aa-note" style={{ padding: "0 12px 12px", margin: 0 }}>
-        The pair is checked with one live quote call before it&apos;s stored (encrypted). The token is never shown again.
+        The pair is checked with one live quote call before it&apos;s stored (encrypted). The token is never shown again. There is one pair for the
+        whole site: saving replaces it for every viewer&apos;s live prices and the daily sync.
       </p>
     </section>
   );
