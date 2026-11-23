@@ -15,3 +15,9 @@ describe("tokenClaims", () => {
     expect(tokenClaims(jwt({ iss: "dhan" }))).toEqual({ expiresAt: null, clientId: null });
   });
 });
+
+describe("tokenClaims (browser-safe decoder)", () => {
+  it("reads a numeric client ID and tolerates surrounding spaces", () => {
+    expect(tokenClaims(`  ${jwt({ dhanClientId: 1100000002 })} `).clientId).toBe("1100000002");
+  });
+});

@@ -4,6 +4,7 @@ import "../dashboard/dashboard.css";
 import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { dayLabel, inr } from "../dashboard/format";
+import { tokenClaims } from "@/lib/dhan/claims";
 import { parseAceRows } from "@/lib/multiples/parse-ace";
 import type { MultipleRow } from "@/lib/multiples/types";
 
@@ -431,11 +432,21 @@ function ManualGold({ call, busy, run }: { call: Call; busy: string | null; run:
 function DhanCard({ status, call, busy, run }: { status: Status | null; call: Call; busy: string | null; run: Run }) {
   const [clientId, setClientId] = useState("");
   const [token, setToken] = useState("");
+  const [fromToken, setFromToken] = useState(false);
+  function pasteToken(value: string) {
+    setToken(value);
+    const id = tokenClaims(value).clientId;
+    if (id) setClientId(id);
+    else if (fromToken) setClientId("");
+    setFromToken(Boolean(id));
+  }
   function submit(e: FormEvent) {
     e.preventDefault();
     run("dhan", async () => {
       const res = await call<{ expiresAt: string | null }>("/api/admin/dhan", { clientId, token });
       setToken("");
+      setClientId("");
+      setFromToken(false);
       return `DHAN credentials tested and saved${res.expiresAt ? ` — the token expires ${stamp(res.expiresAt)}` : ""}. Every viewer's live prices and the daily sync now use them.`;
     });
   }
@@ -454,20 +465,30 @@ function DhanCard({ status, call, busy, run }: { status: Status | null; call: Ca
         </span>
       </div>
       <form className="aa-controls" onSubmit={submit}>
-        <label className="aa-field">
-          Client ID
-          <input className="aa-input" value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder={status?.dhan.clientId ?? ""} autoComplete="off" required />
-        </label>
         <label className="aa-field" style={{ flex: 1, minWidth: 260 }}>
           Access token
-          <input className="aa-input" type="password" value={token} onChange={(e) => setToken(e.target.value)} autoComplete="off" required style={{ textAlign: "left" }} />
+          <input className="aa-input" type="password" value={token} onChange={(e) => pasteToken(e.target.value)} autoComplete="off" required style={{ textAlign: "left" }} />
+        </label>
+        <label className="aa-field">
+          Client ID {fromToken ? "· from token ✓" : "· optional"}
+          <input
+            className="aa-input"
+            value={clientId}
+            onChange={(e) => {
+              setClientId(e.target.value);
+              setFromToken(false);
+            }}
+            placeholder="read from the token"
+            autoComplete="off"
+          />
         </label>
         <button className="aa-btn" type="submit" disabled={busy !== null}>
           {busy === "dhan" ? "Testing…" : "Test & save"}
         </button>
       </form>
       <p className="aa-note" style={{ padding: "0 12px 12px", margin: 0 }}>
-        The pair is checked with one live quote call before it&apos;s stored (encrypted). The token is never shown again. There is one pair for the
+        Just paste the token — DHAN tokens carry the client ID, so it fills in by itself (type one only if it doesn&apos;t). The pair is checked
+        with one live quote call before it&apos;s stored (encrypted). The token is never shown again. There is one pair for the
         whole site: saving replaces it for every viewer&apos;s live prices and the daily sync.
       </p>
     </section>

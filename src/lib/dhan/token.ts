@@ -2,6 +2,9 @@ import { eq, sql } from "drizzle-orm";
 import { db, hasDatabase } from "../db/client";
 import { appSettings } from "../db/schema";
 import { decryptSetting, encryptSetting, maskExceptLast4 } from "../encryption";
+import { tokenClaims } from "./claims";
+
+export { tokenClaims };
 
 const TOKEN_KEY = "dhan_access_token";
 const CLIENT_ID_KEY = "dhan_client_id";
@@ -15,26 +18,6 @@ export class DhanNotConfiguredError extends Error {
   constructor() {
     super("DHAN credentials are not set — add the client ID and access token on /admin.");
     this.name = "DhanNotConfiguredError";
-  }
-}
-
-interface TokenClaims {
-  /** When DHAN stops accepting the token. */
-  expiresAt: Date | null;
-  /** The DHAN client ID the token was issued to. */
-  clientId: string | null;
-}
-
-/** DHAN access tokens are JWTs; reads their expiry and client ID without verifying the signature. */
-export function tokenClaims(token: string): TokenClaims {
-  try {
-    const payload = JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8")) as { exp?: unknown; dhanClientId?: unknown };
-    return {
-      expiresAt: typeof payload.exp === "number" ? new Date(payload.exp * 1000) : null,
-      clientId: typeof payload.dhanClientId === "string" || typeof payload.dhanClientId === "number" ? String(payload.dhanClientId) : null,
-    };
-  } catch {
-    return { expiresAt: null, clientId: null };
   }
 }
 
