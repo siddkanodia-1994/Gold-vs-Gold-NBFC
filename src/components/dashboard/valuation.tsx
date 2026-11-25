@@ -20,12 +20,13 @@ import {
   type ValuationSettings,
 } from "@/lib/valuation/model";
 import type { ValuationModelData } from "@/lib/valuation/store";
+import { fiscalYearOf, fyLabel, inputsForTargetYear, targetYearOptions } from "@/lib/valuation/target-year";
 import { Pct } from "./common";
 import { dayLabel, inr, num } from "./format";
 import { companySeries, metricView, type MultiplesData } from "./multiples";
 
-// The Valuation Model tab, laid out as the AMC dashboard's: the FY28E
-// table on top (P/B, PE or Mcap/Sales), then the Target Price table --
+// The Valuation Model tab, laid out as the AMC dashboard's: the target-year
+// table on top (FY28E by default; P/B, PE or Mcap/Sales), then the Target Price table --
 // Ratio, Best fit and that multiple, Bear / Base / Bull, weighted -- with
 // its settings beside it. Anyone can view; edits need the admin password.
 
@@ -257,7 +258,9 @@ export function ValuationSection({
   );
   const band = settings ? bandFor(settings.multiple) : null;
 
-  const table = useMemo(() => (settings ? computeTargetPrices(rows, company, settings, inputs, band) : null), [rows, company, settings, inputs, band]);
+  // The target year's net worth / PAT / revenue in the FY28E slots the model reads.
+  const yearInputs = useMemo(() => (settings ? inputsForTargetYear(inputs, settings.targetFy) : inputs), [inputs, settings]);
+  const table = useMemo(() => (settings ? computeTargetPrices(rows, company, settings, yearInputs, band) : null), [rows, company, settings, yearInputs, band]);
 
   async function post(body: unknown) {
     const res = await fetch("/api/admin/valuation-model", {
@@ -274,6 +277,16 @@ export function ValuationSection({
   const saveField = (field: InputField) => async (value: number | null) => {
     try {
       await post({ company, field, value });
+      await mutate();
+      setMsg(null);
+    } catch (err) {
+      setMsg({ tone: "bad", text: err instanceof Error ? err.message : "Save failed" });
+    }
+  };
+
+  const saveYearField = (field: InputField, fiscalYear: number) => async (value: number | null) => {
+    try {
+      await post({ company, field, value, fiscalYear });
       await mutate();
       setMsg(null);
     } catch (err) {
@@ -305,6 +318,13 @@ export function ValuationSection({
   const set = (patch: Partial<ValuationSettings>) => setLocal((s) => ({ ...s, ...patch }));
   const dirty = Object.keys(local).length > 0 || multiplesPeriod !== saved?.multiplesPeriod;
   const anchor = multiples?.[company].anchor ?? null;
+  const ty = fyLabel(settings.targetFy);
+  const ty1 = fyLabel(settings.targetFy - 1);
+  const ty2 = fyLabel(settings.targetFy - 2);
+  const incomeLabel = `${def.income} ${ty}E (₹ Cr)`;
+  const yearOptions = targetYearOptions(fiscalYearOf(), settings.targetFy).map((fy) => ({ key: String(fy), label: `${fyLabel(fy)}E` }));
+  const yearSeg = <Seg value={String(settings.targetFy)} options={yearOptions} onChange={(v) => set({ targetFy: Number(v) })} label="Target year" />;
+  const incomeMissing = block.perShare === null && (inputs.sharesCr ?? null) !== null && (yearInputs[def.incomeField] ?? null) === null;
 
   const methodRows: { key: MethodKey; name: string; how: string }[] = [
     {
@@ -324,9 +344,9 @@ export function ValuationSection({
     {
       key: "multiple",
       name: def.name,
-      how: `FY28E ${def.income.split(" FY28E")[0].toLowerCase()} × target ${METRIC_LABELS[settings.multiple].short} ÷ shares, discounted 2 periods (FY27, FY26 rates)${
+      how: `${ty}E ${def.income.toLowerCase()} × target ${METRIC_LABELS[settings.multiple].short} ÷ shares, discounted 2 periods (${ty1}, ${ty2} rates)${
         SCENARIOS.some((k) => block.fromBand[k]) ? `; blank multiples use the ${multiplesPeriod} −1 SD / Mean / +1 SD` : ""
-      }${block.perShare === null ? " — enter the FY28E inputs above" : ""}`,
+      }${block.perShare === null ? ` — enter the ${ty}E inputs above` : ""}`,
     },
   ];
   const weightTotal = settings.weights.ratio + settings.weights.bestFit + settings.weights.multiple;
@@ -339,13 +359,15 @@ export function ValuationSection({
     <div className="gn-stack">
       {msg && <p className={`gn-tile gn-tile--${msg.tone === "ok" ? "ok" : "bad"}`} style={{ margin: 0 }}>{msg.text}</p>}
 
-      <section className="pl-panel vm" aria-label="Valuation FY28E">
+      <section className="pl-panel vm" aria-label={`Valuation ${ty}E`}>
         <div className="pl-band">
-          Valuation · FY28E <span className="pl-band-unit">Bear / Base / Bull · income ₹ Cr · targets ₹ per share · {co.name}</span>
+          Valuation · {ty}E <span className="pl-band-unit">Bear / Base / Bull · income ₹ Cr · targets ₹ per share · {co.name}</span>
         </div>
         <div className="flex flex-wrap items-center gap-3" style={{ padding: "12px 12px 0" }}>
           <span className="gn-lbl">Method</span>
           <Seg value={settings.multiple} options={MULTIPLE_OPTIONS} onChange={(m) => set({ multiple: m })} label="Valuation multiple" />
+          <span className="gn-lbl">Target year</span>
+          {yearSeg}
           <span style={{ marginLeft: "auto" }} className="flex flex-wrap items-center gap-2">
             {secret ? (
               <>
@@ -389,7 +411,7 @@ export function ValuationSection({
         <div className="vs-grid">
           <div className="vs-block">
             <p className="vs-cap">
-              <b>{def.name} method</b> FY28E {def.income.split(" FY28E")[0].toLowerCase()} × {METRIC_LABELS[settings.multiple].short} ÷ shares, discounted to today
+              <b>{def.name} method</b> {ty}E {def.income.toLowerCase()} × {METRIC_LABELS[settings.multiple].short} ÷ shares, discounted to today
             </p>
             <table className="vs-t">
               <thead>
@@ -403,9 +425,16 @@ export function ValuationSection({
                 </tr>
               </thead>
               <tbody>
-                <SharedInputRow label={def.income} value={inputs[def.incomeField] ?? null} editable={editable} onSave={saveField(def.incomeField)} decimals={0} fmt={inr0} />
+                <SharedInputRow
+                  label={incomeLabel}
+                  value={yearInputs[def.incomeField] ?? null}
+                  editable={editable}
+                  onSave={saveYearField(def.incomeField, settings.targetFy)}
+                  decimals={0}
+                  fmt={inr0}
+                />
                 <SharedInputRow label="Shares (Cr)" value={inputs.sharesCr ?? null} editable={editable} onSave={saveField("sharesCr")} decimals={2} fmt={(x) => (x === null ? "—" : num(x, 2))} />
-                <ScenarioRow label={def.perShare} values={{ bear: block.perShare, base: block.perShare, bull: block.perShare }} fmt={(x) => (x === null ? "—" : num(x, 1))} />
+                <ScenarioRow label={`${def.perShare} ${ty}E (₹)`} values={{ bear: block.perShare, base: block.perShare, bull: block.perShare }} fmt={(x) => (x === null ? "—" : num(x, 1))} />
                 <tr className="vs-mult">
                   <th scope="row">{def.multiple}</th>
                   {def.fields.map((f, i) => {
@@ -430,11 +459,11 @@ export function ValuationSection({
                     );
                   })}
                 </tr>
-                <ScenarioRow label="Price Target FY28" values={block.fy28} className="vs-strong" />
+                <ScenarioRow label={`Price Target ${ty}`} values={block.fy28} className="vs-strong" />
                 <UpsideRow values={block.fy28} cmp={cmp} />
                 <GapRow />
                 <SharedInputRow
-                  label="Discount % (FY27)"
+                  label={`Discount % (${ty1})`}
                   value={inputs.discountFy27 ?? null}
                   editable={editable}
                   onSave={saveField("discountFy27")}
@@ -442,10 +471,10 @@ export function ValuationSection({
                   scale={100}
                   fmt={(x) => (x === null ? "—" : `${(x * 100).toFixed(1)}%`)}
                 />
-                <ScenarioRow label="Target Price FY27" values={block.fy27} className="vs-strong" />
+                <ScenarioRow label={`Target Price ${ty1}`} values={block.fy27} className="vs-strong" />
                 <GapRow />
                 <SharedInputRow
-                  label="Discount % (FY26)"
+                  label={`Discount % (${ty2})`}
                   value={inputs.discountFy26 ?? null}
                   editable={editable}
                   onSave={saveField("discountFy26")}
@@ -453,7 +482,7 @@ export function ValuationSection({
                   scale={100}
                   fmt={(x) => (x === null ? "—" : `${(x * 100).toFixed(1)}%`)}
                 />
-                <ScenarioRow label="Target Price Current" values={block.current} className="vs-strong" />
+                <ScenarioRow label={`Target Price Current (${ty2})`} values={block.current} className="vs-strong" />
                 <UpsideRow values={block.current} cmp={cmp} />
               </tbody>
             </table>
@@ -496,11 +525,16 @@ export function ValuationSection({
             </table>
           </div>
         </div>
+        {incomeMissing && (
+          <p className="aa-warn" style={{ paddingTop: 12, paddingBottom: 0 }}>
+            {incomeLabel.replace(" (₹ Cr)", "")} not entered yet for {co.name}, so the {def.name} row shows — and drops out of the weighted average.
+          </p>
+        )}
         <p className="aa-note" style={{ padding: "0 12px 12px" }}>
           {editable
             ? `Blue cells save straight away. Grey multiples are the ${multiplesPeriod} −1 SD / Mean / +1 SD of the chosen multiple; type to override, clear to go back to the band.`
             : `Unlock with the admin password to edit. Grey italic multiples are the ${multiplesPeriod} −1 SD / Mean / +1 SD of the chosen multiple (used until one is typed).`}{" "}
-          Shares and discount rates are shared by all three multiples; each multiple keeps its own FY28E figure and targets. Upsides use{" "}
+          Shares and discount rates are shared by all three multiples and every target year (the first rate is always the step back from the target year, the second the step after); each multiple keeps its own {ty}E figure and targets. Upsides use{" "}
           {cmpIsLive ? "today's live price" : "the last close"}.
         </p>
       </section>
@@ -673,6 +707,12 @@ export function ValuationSection({
                   <Seg value={settings.multiple} options={MULTIPLE_OPTIONS} onChange={(m) => set({ multiple: m })} label="Multiple method" />
                 </td>
               </tr>
+              <tr>
+                <th scope="row">
+                  Target year <small>built on, then discounted 2 years</small>
+                </th>
+                <td>{yearSeg}</td>
+              </tr>
               <tr className="vm-ro">
                 <td colSpan={2}>
                   {editable ? (
@@ -711,8 +751,8 @@ export function ValuationSection({
           </p>
         )}
         <p className="aa-note" style={{ padding: "0 12px 12px" }}>
-          Gold is MCX Gold M spot (₹/10 g){table.ratio ? `, ratio window from ${dayLabel(table.ratio.from)}` : ""}. The {def.name} row is the Target Price Current of the FY28E table above;
-          its FY28E figure, shares, multiples and discount rates are edited there. Weighted average: methods without a value are left out and the rest rescaled to 100%.
+          Gold is MCX Gold M spot (₹/10 g){table.ratio ? `, ratio window from ${dayLabel(table.ratio.from)}` : ""}. The {def.name} row is the Target Price Current of the {ty}E table above;
+          its {ty}E figure, shares, multiples and discount rates are edited there. Weighted average: methods without a value are left out and the rest rescaled to 100%.
         </p>
       </section>
     </div>

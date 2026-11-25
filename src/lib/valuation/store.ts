@@ -1,10 +1,12 @@
 import { sql } from "drizzle-orm";
 import { db, hasDatabase } from "../db/client";
 import { COMPANIES, type CompanyKey } from "../instruments";
-import { DEFAULT_INPUTS, DEFAULT_SETTINGS, INPUT_FIELDS, type CompanyInputs, type InputField, type ValuationSettings } from "./model";
+import { DEFAULT_INPUTS, DEFAULT_SETTINGS, INPUT_FIELDS, type CompanyInputs, type IncomeField, type InputField, type ValuationSettings } from "./model";
+import { withEstimate } from "./target-year";
 
 // One JSON row per company ("inputs:muthoot") plus one for the shared
-// settings, in the valuation_model table.
+// settings, in the valuation_model table. Target years other than FY28 keep
+// their net worth / PAT / revenue under `estimates` in the company's row.
 
 export interface ValuationModelData {
   settings: ValuationSettings;
@@ -33,6 +35,14 @@ export async function loadValuationModel(): Promise<ValuationModelData> {
 export async function saveInput(company: CompanyKey, field: InputField, value: number | null): Promise<CompanyInputs> {
   const current = { ...DEFAULT_INPUTS, ...((await read(`inputs:${company}`)) as CompanyInputs | null) };
   const next = { ...current, [field]: value };
+  await write(`inputs:${company}`, next);
+  return next;
+}
+
+/** Saves one target year's net worth / PAT / revenue (FY28 in its own field). */
+export async function saveEstimate(company: CompanyKey, field: IncomeField, fiscalYear: number, value: number | null): Promise<CompanyInputs> {
+  const current = { ...DEFAULT_INPUTS, ...((await read(`inputs:${company}`)) as CompanyInputs | null) };
+  const next = withEstimate(current, field, fiscalYear, value);
   await write(`inputs:${company}`, next);
   return next;
 }

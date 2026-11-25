@@ -3,6 +3,7 @@ import { computeRegression } from "../analytics/regression";
 import { rollingAverage, windowOf, type AlignedRow, type Period } from "../analytics/series";
 import type { CompanyKey } from "../instruments";
 import type { Metric } from "../multiples/types";
+import { DEFAULT_TARGET_FY, isTargetFy } from "./target-year";
 
 // The Valuation Model tab: Bear / Base / Bull share prices from three
 // methods and their weighted average, as the AMC dashboard's Valuation
@@ -11,10 +12,11 @@ import type { Metric } from "../multiples/types";
 //    as the Ratio tab and the workbook), × today's gold: −1 SD / Mean / +1 SD.
 //  - Best fit: the price-on-gold line over its own period, read at today's
 //    gold −x% / as is / +x%.
-//  - Multiple (P/B by default, or PE / Mcap-Sales): FY28E net worth / PAT /
-//    revenue × target multiple ÷ shares, discounted to today
-//    ÷ ((1 + FY27 rate)(1 + FY26 rate)). A blank multiple uses the Multiples
-//    chart's 3Y −1 SD / Mean / +1 SD.
+//  - Multiple (P/B by default, or PE / Mcap-Sales): target-year (FY28E by
+//    default, see target-year.ts) net worth / PAT / revenue × target
+//    multiple ÷ shares, discounted to today ÷ ((1 + step-1 rate)(1 + step-2
+//    rate)). A blank multiple uses the Multiples chart's 3Y −1 SD / Mean /
+//    +1 SD.
 //  - Weighted average over the methods with a value and a weight > 0,
 //    rescaled to 100%.
 
@@ -22,20 +24,21 @@ export const SCENARIOS = ["bear", "base", "bull"] as const;
 export type ScenarioKey = (typeof SCENARIOS)[number];
 export type Scenario = Record<ScenarioKey, number | null>;
 
-export const MULTIPLE_METHODS: Record<Metric, { name: string; income: string; perShare: string; multiple: string; incomeField: InputField; fields: [InputField, InputField, InputField] }> = {
-  pbv: { name: "Price to book", income: "Net worth FY28E (₹ Cr)", perShare: "BV / share FY28E (₹)", multiple: "P/B (x)", incomeField: "netWorthFy28eCr", fields: ["pbBear", "pbBase", "pbBull"] },
-  pe: { name: "PE", income: "PAT FY28E (₹ Cr)", perShare: "EPS FY28E (₹)", multiple: "PE (x)", incomeField: "patFy28eCr", fields: ["peBear", "peBase", "peBull"] },
+/** `income` and `perShare` name the figure; the page adds the target year ("Net worth FY29E (₹ Cr)"). */
+export const MULTIPLE_METHODS: Record<Metric, { name: string; income: string; perShare: string; multiple: string; incomeField: IncomeField; fields: [InputField, InputField, InputField] }> = {
+  pbv: { name: "Price to book", income: "Net worth", perShare: "BV / share", multiple: "P/B (x)", incomeField: "netWorthFy28eCr", fields: ["pbBear", "pbBase", "pbBull"] },
+  pe: { name: "PE", income: "PAT", perShare: "EPS", multiple: "PE (x)", incomeField: "patFy28eCr", fields: ["peBear", "peBase", "peBull"] },
   mcapSales: {
     name: "Mcap / Sales",
-    income: "Revenue FY28E (₹ Cr)",
-    perShare: "Revenue / share FY28E (₹)",
+    income: "Revenue",
+    perShare: "Revenue / share",
     multiple: "Mcap / Sales (x)",
     incomeField: "revenueFy28eCr",
     fields: ["msBear", "msBase", "msBull"],
   },
 };
 
-/** Per-company inputs typed into the FY28E table (rates as fractions). */
+/** Per-company inputs typed into the FY28E table (rates as fractions; discountFy27 / discountFy26 are steps 1 and 2 back from the target year). */
 export const INPUT_FIELDS = [
   "netWorthFy28eCr",
   "patFy28eCr",
@@ -54,7 +57,10 @@ export const INPUT_FIELDS = [
   "msBull",
 ] as const;
 export type InputField = (typeof INPUT_FIELDS)[number];
-export type CompanyInputs = Partial<Record<InputField, number | null>>;
+export type IncomeField = "netWorthFy28eCr" | "patFy28eCr" | "revenueFy28eCr";
+/** Other target years' figures, by fiscal year ("2029"). */
+export type YearEstimates = Record<string, Partial<Record<"netWorthCr" | "patCr" | "revenueCr", number | null>>>;
+export type CompanyInputs = Partial<Record<InputField, number | null>> & { estimates?: YearEstimates };
 
 /** Gold the Ratio is multiplied by / the Best fit line is read at: 1 = latest spot, N = last N sessions' average. */
 export const GOLD_AT_OPTIONS = [
@@ -78,6 +84,8 @@ export type PeriodKey = (typeof PERIOD_OPTIONS)[number]["key"];
 
 export interface ValuationSettings {
   multiple: Metric;
+  /** The year the multiple's target is built on (FY28E = 2028), discounted two steps back to today. */
+  targetFy: number;
   /** Window for the multiples' mean and SD: the Multiples tab, the reference table and blank-multiple fallbacks. */
   multiplesPeriod: PeriodKey;
   ratioPeriod: PeriodKey;
@@ -92,6 +100,7 @@ export interface ValuationSettings {
 
 export const DEFAULT_SETTINGS: ValuationSettings = {
   multiple: "pbv",
+  targetFy: DEFAULT_TARGET_FY,
   multiplesPeriod: "3Y",
   ratioPeriod: "3Y",
   ratioGoldDays: 1,
@@ -120,6 +129,7 @@ export function validSettings(v: unknown): v is ValuationSettings {
   return (
     !!s &&
     ["pbv", "pe", "mcapSales"].includes(s.multiple) &&
+    isTargetFy(s.targetFy) &&
     periods.includes(s.ratioPeriod) &&
     periods.includes(s.multiplesPeriod) &&
     periods.includes(s.bestFitPeriod) &&
@@ -135,7 +145,7 @@ export function validSettings(v: unknown): v is ValuationSettings {
   );
 }
 
-/** Bear / Base / Bull FY28 → FY27 → today, for one multiple. */
+/** Bear / Base / Bull at the target year → one year back → today, for one multiple (fields named for FY28). */
 export interface MultipleBlock {
   perShare: number | null;
   multiples: Scenario;

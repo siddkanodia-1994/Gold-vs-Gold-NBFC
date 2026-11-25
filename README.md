@@ -18,9 +18,11 @@ the AMC Analytics Ratio / Regression tabs.
 - **Multiples**: consolidated TTM PE, P/BV and Mcap/Sales band charts (mean, ±1/±2 SD over the window,
   sample SD as in the AMC dashboard) with the implied share price at each band; the Summary adds a multiples
   snapshot table.
-- **Valuation Model**: as the AMC dashboard's. A FY28E table (P/B by default; toggle to PE or Mcap/Sales):
-  FY28E net worth / PAT / revenue × Bear/Base/Bull multiple ÷ shares, discounted to today by the FY27 and FY26
-  rates (blank multiples use the 3Y −1 SD / Mean / +1 SD). Then the Target Price table: Ratio (price ÷ gold,
+- **Valuation Model**: as the AMC dashboard's. A target-year table (FY28E by default, switch to FY29E / FY30E;
+  P/B by default, toggle to PE or Mcap/Sales): that year's net worth / PAT / revenue × Bear/Base/Bull multiple ÷
+  shares, discounted two years back to today (the first rate is always the step back from the target year, the
+  second the step after; each year keeps its own net worth / PAT / revenue; blank multiples use the 3Y −1 SD /
+  Mean / +1 SD). Then the Target Price table: Ratio (price ÷ gold,
   mean ±1 SD × today's gold), Best fit (line at gold −/+ x%) and the chosen multiple, with a weighted average
   (default 35 / 15 / 50). Anyone can view; inputs and "Save as default" need the admin password.
 - **Daily Data**: the window's sessions with a CSV download.
