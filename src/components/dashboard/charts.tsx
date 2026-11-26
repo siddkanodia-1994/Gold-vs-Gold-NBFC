@@ -55,13 +55,15 @@ interface SdLineOpts {
   prefix?: string;
 }
 
+const sdColor = (k: number) => (k === 0 ? "#555" : Math.abs(k) === 1 ? "#16a34a" : "#c0392b");
+
 function sdLines(avg: number, sd: number, format: (v: number) => string, o: SdLineOpts = {}) {
   return SD_LEVELS.map((k) => (
     <ReferenceLine
       key={`${o.prefix ?? ""}${k}`}
       yAxisId={o.yAxisId}
       y={avg + k * sd}
-      stroke={k === 0 ? "#555" : Math.abs(k) === 1 ? "#16a34a" : "#c0392b"}
+      stroke={sdColor(k)}
       strokeDasharray={k === 0 ? undefined : "4 4"}
       strokeWidth={k === 0 ? 1.2 : 1}
       ifOverflow="extendDomain"
@@ -75,7 +77,18 @@ function sdLines(avg: number, sd: number, format: (v: number) => string, o: SdLi
   ));
 }
 
-function TipBox({ title, rows }: { title: string; rows: [string, string, string?][] }) {
+/** A chart's mean and ±1 / ±2 SD levels, listed under the hovered values with the hovered value's z-score. */
+interface TipLevels {
+  label: string;
+  avg: number;
+  sd: number;
+  value: number;
+  format: (v: number) => string;
+  color?: (k: number) => string;
+}
+
+function TipBox({ title, rows, levels }: { title: string; rows: [string, string, string?][]; levels?: TipLevels }) {
+  const z = levels && levels.sd > 0 ? (levels.value - levels.avg) / levels.sd : null;
   return (
     <div style={{ background: "#fff", border: "1px solid #d9d9d4", padding: "6px 10px", fontSize: 12, lineHeight: 1.5 }}>
       <div style={{ fontWeight: 600 }}>{title}</div>
@@ -85,6 +98,20 @@ function TipBox({ title, rows }: { title: string; rows: [string, string, string?
           <span style={{ fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{v}</span>
         </div>
       ))}
+      {levels && (
+        <div style={{ borderTop: "1px solid #e5e6e8", marginTop: 4, paddingTop: 4 }}>
+          <div style={{ display: "flex", gap: 12, justifyContent: "space-between", color: MUTED, fontSize: 11 }}>
+            <span>{levels.label}</span>
+            {z !== null && <span style={{ fontVariantNumeric: "tabular-nums" }}>z {z < 0 ? "−" : "+"}{Math.abs(z).toFixed(2)}</span>}
+          </div>
+          {SD_LEVELS.map((k) => (
+            <div key={k} style={{ display: "flex", gap: 12, justifyContent: "space-between" }}>
+              <span style={{ color: (levels.color ?? sdColor)(k) }}>{SD_LABELS[k]}</span>
+              <span style={{ fontVariantNumeric: "tabular-nums" }}>{levels.format(levels.avg + k * levels.sd)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -150,6 +177,7 @@ export function RatioChart({ r, avgDays, symbol }: { r: RatioResult; avgDays: nu
                         [symbol, inr(payload[0].payload!.price, 2)],
                         [goldLabel, inr(payload[0].payload!.avgGold)],
                       ]}
+                      levels={{ label: "Ratio levels", avg: r.mean, sd: r.sd, value: payload[0].payload!.ratio, format: (v) => v.toFixed(dp) }}
                     />
                   ) : null
                 }
@@ -171,6 +199,13 @@ export function RatioChart({ r, avgDays, symbol }: { r: RatioResult; avgDays: nu
                         [symbol, inr(payload[0].payload!.price, 2), INK],
                         [goldLabel, inr(payload[0].payload!.avgGold), GOLD],
                       ]}
+                      levels={
+                        bands === "price"
+                          ? { label: `${symbol} levels`, avg: stats.price.mean, sd: stats.price.sd, value: payload[0].payload!.price, format: (v) => inr(v) }
+                          : bands === "gold"
+                            ? { label: `${goldLabel} levels`, avg: stats.gold.mean, sd: stats.gold.sd, value: payload[0].payload!.avgGold, format: (v) => inr(v) }
+                            : undefined
+                      }
                     />
                   ) : null
                 }
@@ -356,6 +391,14 @@ export function ModelRatioChart({ g, symbol }: { g: RegressionResult; symbol: st
                       [symbol, inr(payload[0].payload!.y, 2)],
                       ["Model", inr(payload[0].payload!.fitted, 2), BLUE],
                     ]}
+                    levels={{
+                      label: "Close ÷ model levels",
+                      avg: m,
+                      sd: s,
+                      value: payload[0].payload!.ratio,
+                      format: (v) => v.toFixed(3),
+                      color: (k) => (k === 0 ? INK : MUTED),
+                    }}
                   />
                 ) : null
               }
@@ -400,7 +443,7 @@ export function ReturnToFitChart({ g, symbol }: { g: RegressionResult; symbol: s
                 key={k}
                 yAxisId="r"
                 y={g.retMean + k * g.retSd}
-                stroke={k === 0 ? "#555" : Math.abs(k) === 1 ? "#16a34a" : "#c0392b"}
+                stroke={sdColor(k)}
                 strokeDasharray={k === 0 ? undefined : "4 4"}
                 ifOverflow="extendDomain"
                 label={{ value: `${SD_LABELS[k]} ${pct(g.retMean + k * g.retSd)}`, position: "insideBottomRight", fontSize: 10, fill: MUTED }}
@@ -415,6 +458,7 @@ export function ReturnToFitChart({ g, symbol }: { g: RegressionResult; symbol: s
                       ["Return to best fit", pct(payload[0].payload!.ret), "#7c3aed"],
                       [symbol, inr(payload[0].payload!.y, 2), "#9ca3af"],
                     ]}
+                    levels={{ label: "Return to best fit levels", avg: g.retMean, sd: g.retSd, value: payload[0].payload!.ret, format: (v) => pct(v) }}
                   />
                 ) : null
               }
