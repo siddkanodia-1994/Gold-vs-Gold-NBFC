@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { AVG_DAYS_GRID, computeOptimiser, LOOKBACK_GRID, type OptimiserResult } from "@/lib/analytics/optimiser";
 import { COMPANIES, type CompanyKey } from "@/lib/instruments";
 import { zText } from "./common";
-import { GoldPriceSummary, offsetsFromSelections, selectionsFromOffsets, withSelection } from "./gold-ledger";
+import { GoldPriceSummary, offsetsFromSelections, selectionsFromOffsets, withSelection, type ShareLedger } from "./gold-ledger";
 import type { LedgerSelections } from "./gold-ledger";
 import { buildPeriodLedger } from "@/lib/analytics/period-ledger";
 import type { SummaryDefaults, SummaryView } from "@/lib/summary-defaults";
@@ -217,6 +217,7 @@ export function SummarySection({
   view,
   onView,
   goldPoints,
+  sharePoints,
   saved,
   onSaved,
 }: {
@@ -230,6 +231,8 @@ export function SummarySection({
   /** Picks a view for this visit; null goes back to the saved default. */
   onView: (v: SummaryView | null) => void;
   goldPoints: LedgerPoint[];
+  /** Each company's NSE closes, for its ledger beside the gold one. */
+  sharePoints: Record<CompanyKey, LedgerPoint[]>;
   /** The shared saved default (view, weekday tables, row picks). */
   saved: SummaryDefaults;
   /** Re-reads the saved default after a save. */
@@ -239,6 +242,17 @@ export function SummarySection({
   const [gridCo, setGridCo] = useState<CompanyKey>("muthoot");
   const sessions = model.span.endIdx - model.span.startIdx + 1;
   const ledger = useMemo(() => buildPeriodLedger(goldPoints), [goldPoints]);
+  const lastRow = model.rows.at(-1);
+  const shares: ShareLedger[] = useMemo(
+    () =>
+      COMPANIES.map((c) => ({
+        symbol: c.symbol,
+        model: buildPeriodLedger(sharePoints[c.key]),
+        points: sharePoints[c.key],
+        live: lastRow?.live ? { date: lastRow.date, value: lastRow[c.key] } : null,
+      })),
+    [sharePoints, lastRow]
+  );
   const [hideChoice, setHideChoice] = useState<boolean | null>(null);
   const [selChoice, setSelChoice] = useState<LedgerSelections | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -306,6 +320,7 @@ export function SummarySection({
         <GoldPriceSummary
           model={ledger}
           points={goldPoints}
+          shares={shares}
           selections={selections}
           onSelect={(key, label) => {
             setSelChoice(withSelection(selections, key, label));

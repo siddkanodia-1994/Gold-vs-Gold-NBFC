@@ -1,4 +1,5 @@
 import type { LedgerPoint } from "./period-ledger";
+import type { CompanyKey } from "../instruments";
 import type { RawRow } from "./series";
 
 // One-off sessions kept out of the gold ledger's averages, day counts and
@@ -20,4 +21,13 @@ function isWeekend(iso: string): boolean {
 /** Stored rows → one ledger point per MCX gold day, special sessions removed. */
 export function goldLedgerPoints(rows: RawRow[]): LedgerPoint[] {
   return rows.flatMap((r) => (r.g !== undefined && r.g > 0 && !isWeekend(r.d) && !GOLD_LEDGER_SPECIAL_SESSIONS.has(r.d) ? [{ date: r.d, value: r.g }] : []));
+}
+
+/** Stored rows → one ledger point per NSE close for a company, the same special sessions removed. */
+export function shareLedgerPoints(rows: RawRow[], company: CompanyKey): LedgerPoint[] {
+  const field = company === "muthoot" ? "mu" : "ma";
+  return rows.flatMap((r) => {
+    const v = r[field];
+    return v !== undefined && v > 0 && !isWeekend(r.d) && !GOLD_LEDGER_SPECIAL_SESSIONS.has(r.d) ? [{ date: r.d, value: v }] : [];
+  });
 }

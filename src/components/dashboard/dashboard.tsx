@@ -14,7 +14,7 @@ import { buildModel } from "./model";
 import { RatioSection, RegressionSection } from "./sections";
 import { SummarySection } from "./summary";
 import { STANDARD_DEFAULTS, type SummaryDefaults, type SummaryView } from "@/lib/summary-defaults";
-import { goldLedgerPoints } from "@/lib/analytics/gold-ledger-points";
+import { goldLedgerPoints, shareLedgerPoints } from "@/lib/analytics/gold-ledger-points";
 import { ValuationSection } from "./valuation";
 import { PERIOD_OPTIONS, periodOf, type PeriodKey as MultiplesPeriodKey } from "@/lib/valuation/model";
 import type { ValuationModelData } from "@/lib/valuation/store";
@@ -217,6 +217,10 @@ export function Dashboard() {
   const summaryDefaults = useSWR<SummaryDefaults>("/api/summary-defaults", fetchJson, { revalidateOnFocus: false });
   const savedSummary = summaryDefaults.data ?? STANDARD_DEFAULTS;
   const goldPoints = useMemo(() => goldLedgerPoints(history.data?.rows ?? []), [history.data]);
+  const sharePoints = useMemo(
+    () => ({ muthoot: shareLedgerPoints(history.data?.rows ?? [], "muthoot"), manappuram: shareLedgerPoints(history.data?.rows ?? [], "manappuram") }),
+    [history.data]
+  );
   const lastRow = rows?.at(-1);
   const today = live.data?.asOf ? new Date(Date.parse(live.data.asOf) + 5.5 * 3600_000).toISOString().slice(0, 10) : null;
 
@@ -434,6 +438,7 @@ export function Dashboard() {
                   view={s.sv ?? savedSummary.view}
                   onView={(sv) => set({ sv })}
                   goldPoints={goldPoints}
+                  sharePoints={sharePoints}
                   saved={savedSummary}
                   onSaved={() => summaryDefaults.mutate()}
                   model={model}

@@ -139,6 +139,17 @@
 .aa .pl-row > .pl-scroll:last-child { border-right: 0; }
 .aa .pl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
+/* Summary: gold and the two share prices in one period table */
+.aa .pl-period.gn-combined { width: 100%; min-width: 900px; flex: none; border-right: 0; }
+.aa .gn-combined .gn-cl-period { width: 16%; }
+.aa .gn-combined .gn-cl-v { width: 10%; }
+.aa .gn-combined .gn-cl-c { width: 8%; }
+.aa .gn-combined tr.gn-cl-names th {
+  background: var(--pl-color-bg-card); color: var(--pl-ledger-cell-strong); font-size: 12px; font-weight: 700;
+  padding: 4px 7px; text-align: center; border-bottom: 2px solid var(--pl-color-border);
+}
+.aa .gn-combined tr.gn-cl-names th + th, .aa .gn-combined td.gn-cl-val, .aa .gn-combined tr.pl-hdr th:nth-child(3n + 2) { border-left: 2px solid var(--pl-color-border); }
+
 /* One part on its own fills the row */
 .aa .pl-row--single > .pl-period { width: 100%; flex: 1 1 auto; border-right: 0; }
 .aa .pl-row--single > .pl-scroll { padding-right: 0; border-right: 0; }

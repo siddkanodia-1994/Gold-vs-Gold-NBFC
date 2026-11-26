@@ -97,6 +97,12 @@ export function formatLedgerInr(value: number | null): string {
   return value.toLocaleString("en-IN", { maximumFractionDigits: 0, minimumFractionDigits: 0 });
 }
 
+/** A share price with Indian grouping and 2 decimals: 2597.7 → "2,597.70". */
+export function formatLedgerPrice(value: number | null): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return value.toLocaleString("en-IN", { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+}
+
 function mean(rows: CalendarDay[]): number | null {
   if (rows.length === 0) return null;
   let sum = 0;
