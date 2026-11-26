@@ -443,11 +443,17 @@ function DhanCard({ status, call, busy, run }: { status: Status | null; call: Ca
   function submit(e: FormEvent) {
     e.preventDefault();
     run("dhan", async () => {
-      const res = await call<{ expiresAt: string | null }>("/api/admin/dhan", { clientId, token });
+      const res = await call<{ expiresAt: string | null; sync?: { days: number; from: string; latest: string | null }; syncError?: string }>("/api/admin/dhan", {
+        clientId,
+        token,
+      });
       setToken("");
       setClientId("");
       setFromToken(false);
-      return `DHAN credentials tested and saved${res.expiresAt ? ` — the token expires ${stamp(res.expiresAt)}` : ""}. Every viewer's live prices and the daily sync now use them.`;
+      const synced = res.sync
+        ? ` Share closes synced: ${res.sync.days} sessions from ${dayLabel(res.sync.from)}${res.sync.latest ? ` to ${dayLabel(res.sync.latest)}` : ""}.`
+        : ` Share closes not synced (${res.syncError ?? "unknown error"}) — press Sync now below.`;
+      return `DHAN credentials tested and saved${res.expiresAt ? ` — the token expires ${stamp(res.expiresAt)}` : ""}. Every viewer's live prices and the daily sync now use them.${synced}`;
     });
   }
   return (
@@ -483,12 +489,12 @@ function DhanCard({ status, call, busy, run }: { status: Status | null; call: Ca
           />
         </label>
         <button className="aa-btn" type="submit" disabled={busy !== null}>
-          {busy === "dhan" ? "Testing…" : "Test & save"}
+          {busy === "dhan" ? "Testing & syncing…" : "Test & save"}
         </button>
       </form>
       <p className="aa-note" style={{ padding: "0 12px 12px", margin: 0 }}>
         Just paste the token — DHAN tokens carry the client ID, so it fills in by itself (type one only if it doesn&apos;t). The pair is checked
-        with one live quote call before it&apos;s stored (encrypted). The token is never shown again. There is one pair for the
+        with one live quote call before it&apos;s stored (encrypted), then the last 30 days of share closes are synced straight away. The token is never shown again. There is one pair for the
         whole site: saving replaces it for every viewer&apos;s live prices and the daily sync.
       </p>
     </section>

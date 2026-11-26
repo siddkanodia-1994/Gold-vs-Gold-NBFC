@@ -1,12 +1,17 @@
 import { adminError, requireAdminSecret } from "@/lib/admin-guard";
+import { addDays, istDate } from "@/lib/dates";
 import { testDhanCredentials } from "@/lib/dhan/client";
 import { saveDhanCredentials, tokenClaims } from "@/lib/dhan/token";
 import { maskExceptLast4 } from "@/lib/encryption";
+import { syncShareCloses } from "@/lib/sync";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 // Saves a DHAN access token (client ID optional — read from the token), but only after one live quote
-// call proves it works.
+// call proves it works. Then back-fills the last 30 days of closes at once
+// (what /admin's Sync now does), so days missed while the old token was
+// expired don't wait for the next cron.
 export async function POST(request: Request) {
   try {
     requireAdminSecret(request);
@@ -23,7 +28,15 @@ export async function POST(request: Request) {
     const test = await testDhanCredentials(creds);
     if (!test.ok) return Response.json({ error: test.message }, { status: 400 });
     await saveDhanCredentials(creds);
-    return Response.json({ ok: true, expiresAt: tokenClaims(creds.token).expiresAt?.toISOString() ?? null });
+    const expiresAt = tokenClaims(creds.token).expiresAt?.toISOString() ?? null;
+    const to = istDate();
+    try {
+      const sync = await syncShareCloses(addDays(to, -30), to);
+      return Response.json({ ok: true, expiresAt, sync: { days: sync.days, from: sync.from, latest: sync.latest } });
+    } catch (err) {
+      // The token is saved either way; the cron and Sync now can still fill the closes.
+      return Response.json({ ok: true, expiresAt, syncError: err instanceof Error ? err.message : "Sync failed" });
+    }
   } catch (err) {
     return adminError(err);
   }
