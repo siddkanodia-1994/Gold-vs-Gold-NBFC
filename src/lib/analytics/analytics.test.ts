@@ -3,9 +3,9 @@ import seed from "../../../data/seed-history.json";
 import expected from "./excel-expected.json";
 import { computeOptimiser } from "./optimiser";
 import { computeRatio } from "./ratio";
-import { computeRegression } from "./regression";
+import { computeRegression, modelRatioLevel } from "./regression";
 import { alignRows, rollingAverage, windowOf, type RawRow } from "./series";
-import { percentRankInc } from "./stats";
+import { mean, percentRankInc, stdevS } from "./stats";
 import { COMPANIES } from "../instruments";
 
 // The workbook as saved: 2-year lookback, 1-day gold average, latest row 08-Nov-26.
@@ -70,5 +70,23 @@ describe("percentRankInc", () => {
     expect(percentRankInc([1, 2, 3, 4], 2)).toBe(0.333);
     expect(percentRankInc([1, 2, 3, 4], 2.5)).toBe(0.5);
     expect(percentRankInc([1, 2, 3, 4], 5)).toBeNull();
+  });
+});
+
+describe("close ÷ model (Regression)", () => {
+  COMPANIES.forEach((c) => {
+    it(`${c.short}: is close ÷ fitted each session, with STDEV.S bands and an equal ₹ step per SD`, () => {
+      const g = computeRegression(rows, avg, span, c.key)!;
+      const ratios = g.points.map((p) => p.y / p.fitted);
+      expect(g.points.map((p) => p.ratio)).toEqual(ratios);
+      close(g.ratioMean, mean(ratios), 12);
+      close(g.ratioSd, stdevS(ratios), 12);
+      close(g.ratioZ, (g.current.ratio - g.ratioMean) / g.ratioSd, 12);
+      // OLS residuals average zero, so the ratio's mean sits near 1.00.
+      expect(g.ratioMean).toBeCloseTo(1, 1);
+      const step = modelRatioLevel(g, 1).price - modelRatioLevel(g, 0).price;
+      close(modelRatioLevel(g, 0).price - modelRatioLevel(g, -1).price, step, 6);
+      close(modelRatioLevel(g, 0).price, g.current.fitted * g.ratioMean, 6);
+    });
   });
 });

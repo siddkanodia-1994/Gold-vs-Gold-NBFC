@@ -8,6 +8,7 @@ import {
   ComposedChart,
   Line,
   LineChart,
+  ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
   Scatter,
@@ -21,6 +22,7 @@ import type { RatioResult } from "@/lib/analytics/ratio";
 import type { RegressionResult } from "@/lib/analytics/regression";
 import { dayLabel, dayMs, inr, num, pct, tickMonth } from "./format";
 import { SD_LABELS, SD_LEVELS } from "./common";
+import { mean, stdevS } from "@/lib/analytics/stats";
 
 const INK = "#16181d";
 const GRID = "#eef0f3";
@@ -47,16 +49,28 @@ function timeAxis() {
   );
 }
 
-function sdLines(mean: number, sd: number, format: (v: number) => string) {
+interface SdLineOpts {
+  yAxisId?: string;
+  /** Put before each label, e.g. "Gold". */
+  prefix?: string;
+}
+
+function sdLines(avg: number, sd: number, format: (v: number) => string, o: SdLineOpts = {}) {
   return SD_LEVELS.map((k) => (
     <ReferenceLine
-      key={k}
-      y={mean + k * sd}
+      key={`${o.prefix ?? ""}${k}`}
+      yAxisId={o.yAxisId}
+      y={avg + k * sd}
       stroke={k === 0 ? "#555" : Math.abs(k) === 1 ? "#16a34a" : "#c0392b"}
       strokeDasharray={k === 0 ? undefined : "4 4"}
       strokeWidth={k === 0 ? 1.2 : 1}
       ifOverflow="extendDomain"
-      label={{ value: `${SD_LABELS[k]} ${format(mean + k * sd)}`, position: "insideBottomRight", fontSize: 10, fill: MUTED }}
+      label={{
+        value: `${o.prefix ? `${o.prefix} ` : ""}${SD_LABELS[k]} ${format(avg + k * sd)}`,
+        position: "insideBottomRight",
+        fontSize: 10,
+        fill: MUTED,
+      }}
     />
   ));
 }
@@ -81,18 +95,42 @@ type TipProps<T> = { active?: boolean; payload?: readonly { payload?: T }[] };
 /** Share price ÷ avg gold with mean and ±1/±2 SD, or (Absolute) price and avg gold on two axes. */
 export function RatioChart({ r, avgDays, symbol }: { r: RatioResult; avgDays: number; symbol: string }) {
   const [view, setView] = useState<"ratio" | "absolute">("ratio");
+  // Absolute view: bands for one series at a time, shown alone (the other series is hidden).
+  const [bands, setBands] = useState<"none" | "price" | "gold">("none");
+  const toggleBands = (k: "price" | "gold") => setBands((b) => (b === k ? "none" : k));
   const data = useMemo(() => r.points.map((p) => ({ ...p, t: dayMs(p.date) })), [r]);
+  // Absolute view's optional bands: each series' own window mean and STDEV.S, as the ratio's.
+  const stats = useMemo(() => {
+    const prices = r.points.map((p) => p.price);
+    const golds = r.points.map((p) => p.avgGold);
+    return { price: { mean: mean(prices), sd: stdevS(prices) }, gold: { mean: mean(golds), sd: stdevS(golds) } };
+  }, [r]);
   const dp = r.mean < 0.01 ? 5 : 4;
   const goldLabel = avgDays > 1 ? `Gold ${avgDays}D avg` : "Gold M spot";
   return (
     <>
-      <div className="gn-seg" role="group" aria-label="Chart view" style={{ marginBottom: 8 }}>
-        <button type="button" aria-pressed={view === "absolute"} onClick={() => setView("absolute")}>
-          Absolute
-        </button>
-        <button type="button" aria-pressed={view === "ratio"} onClick={() => setView("ratio")}>
-          Ratio
-        </button>
+      <div className="flex flex-wrap items-center gap-4" style={{ marginBottom: 8 }}>
+        <div className="gn-seg" role="group" aria-label="Chart view">
+          <button type="button" aria-pressed={view === "absolute"} onClick={() => setView("absolute")}>
+            Absolute
+          </button>
+          <button type="button" aria-pressed={view === "ratio"} onClick={() => setView("ratio")}>
+            Ratio
+          </button>
+        </div>
+        {view === "absolute" && (
+          <div className="flex items-center gap-2" role="group" aria-label="Mean and SD lines">
+            <span className="text-xs text-[var(--pl-color-text-muted)]">Mean &amp; SD lines</span>
+            <div className="gn-seg">
+              <button type="button" aria-pressed={bands === "price"} onClick={() => toggleBands("price")}>
+                {symbol}
+              </button>
+              <button type="button" aria-pressed={bands === "gold"} onClick={() => toggleBands("gold")}>
+                Gold
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <div style={{ height: 340 }}>
         <ResponsiveContainer>
@@ -122,8 +160,8 @@ export function RatioChart({ r, avgDays, symbol }: { r: RatioResult; avgDays: nu
             <LineChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
               <CartesianGrid stroke={GRID} vertical={false} />
               {timeAxis()}
-              <YAxis yAxisId="p" domain={["auto", "auto"]} tickFormatter={(v: number) => num(v)} tick={AXIS} width={56} tickLine={false} axisLine={false} />
-              <YAxis yAxisId="g" orientation="right" domain={["auto", "auto"]} tickFormatter={(v: number) => num(v)} tick={AXIS} width={64} tickLine={false} axisLine={false} />
+              <YAxis yAxisId="p" hide={bands === "gold"} domain={["auto", "auto"]} tickFormatter={(v: number) => num(v)} tick={AXIS} width={56} tickLine={false} axisLine={false} />
+              <YAxis yAxisId="g" hide={bands === "price"} orientation="right" domain={["auto", "auto"]} tickFormatter={(v: number) => num(v)} tick={AXIS} width={64} tickLine={false} axisLine={false} />
               <Tooltip
                 content={({ active, payload }: TipProps<(typeof data)[number]>) =>
                   active && payload?.[0]?.payload ? (
@@ -137,8 +175,10 @@ export function RatioChart({ r, avgDays, symbol }: { r: RatioResult; avgDays: nu
                   ) : null
                 }
               />
-              <Line yAxisId="p" dataKey="price" stroke={INK} strokeWidth={1.4} dot={false} isAnimationActive={false} />
-              <Line yAxisId="g" dataKey="avgGold" stroke={GOLD} strokeWidth={1.4} dot={false} isAnimationActive={false} />
+              {bands === "price" && sdLines(stats.price.mean, stats.price.sd, (v) => inr(v), { yAxisId: "p", prefix: symbol })}
+              {bands === "gold" && sdLines(stats.gold.mean, stats.gold.sd, (v) => inr(v), { yAxisId: "g", prefix: "Gold" })}
+              {bands !== "gold" && <Line yAxisId="p" dataKey="price" stroke={INK} strokeWidth={1.4} dot={false} isAnimationActive={false} />}
+              {bands !== "price" && <Line yAxisId="g" dataKey="avgGold" stroke={GOLD} strokeWidth={1.4} dot={false} isAnimationActive={false} />}
             </LineChart>
           )}
         </ResponsiveContainer>
@@ -165,14 +205,34 @@ export function RatioChart({ r, avgDays, symbol }: { r: RatioResult; avgDays: nu
           </>
         ) : (
           <>
-            <span>
-              <i style={{ background: INK }} />
-              {symbol} (left, ₹)
-            </span>
-            <span>
-              <i style={{ background: GOLD }} />
-              {goldLabel} (right, ₹/10g)
-            </span>
+            {bands !== "gold" && (
+              <span>
+                <i style={{ background: INK }} />
+                {symbol} (left, ₹)
+              </span>
+            )}
+            {bands !== "price" && (
+              <span>
+                <i style={{ background: GOLD }} />
+                {goldLabel} (right, ₹/10g)
+              </span>
+            )}
+            {bands !== "none" && (
+              <>
+                <span>
+                  <i style={{ background: "#555" }} />
+                  Mean
+                </span>
+                <span>
+                  <i style={{ background: "#16a34a" }} />
+                  ±1 SD
+                </span>
+                <span>
+                  <i style={{ background: "#c0392b" }} />
+                  ±2 SD
+                </span>
+              </>
+            )}
           </>
         )}
       </div>
@@ -253,6 +313,70 @@ export function ActualVsModelChart({ g, symbol }: { g: RegressionResult; symbol:
         <span>
           <i style={{ background: GREEN_FILL, height: 10 }} />
           Close below model
+        </span>
+      </div>
+    </>
+  );
+}
+
+/** The AMC dashboard's Regression "Share price ÷ model": close ÷ the best-fit line each session, with the window mean and ±1 / ±2 SD. */
+export function ModelRatioChart({ g, symbol }: { g: RegressionResult; symbol: string }) {
+  const data = useMemo(() => g.points.map((p) => ({ t: dayMs(p.date), date: p.date, ratio: p.ratio, y: p.y, fitted: p.fitted })), [g]);
+  const m = g.ratioMean;
+  const s = g.ratioSd;
+  const values = data.map((d) => d.ratio).concat([m + 2 * s, m - 2 * s]);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const pad = (hi - lo) * 0.06;
+  const last = data[data.length - 1];
+  return (
+    <>
+      <div style={{ height: 320 }}>
+        <ResponsiveContainer>
+          <ComposedChart data={data} margin={{ top: 8, right: 48, bottom: 0, left: 4 }}>
+            <CartesianGrid stroke={GRID} vertical={false} />
+            {timeAxis()}
+            <YAxis domain={[lo - pad, hi + pad]} tickFormatter={(v: number) => v.toFixed(3)} tick={AXIS} width={52} tickLine={false} axisLine={false} />
+            {SD_LEVELS.map((k) => (
+              <ReferenceLine
+                key={k}
+                y={m + k * s}
+                stroke={k === 0 ? INK : Math.abs(k) === 1 ? "#9a9ca1" : "#c4c6ca"}
+                strokeDasharray={k === 0 ? undefined : "4 3"}
+                label={{ value: SD_LABELS[k], position: "right", fontSize: 10, fill: MUTED }}
+              />
+            ))}
+            <Tooltip
+              content={({ active, payload }: TipProps<(typeof data)[number]>) =>
+                active && payload?.[0]?.payload ? (
+                  <TipBox
+                    title={dayLabel(payload[0].payload!.date)}
+                    rows={[
+                      ["Close ÷ model", payload[0].payload!.ratio.toFixed(4), "#7c3aed"],
+                      [symbol, inr(payload[0].payload!.y, 2)],
+                      ["Model", inr(payload[0].payload!.fitted, 2), BLUE],
+                    ]}
+                  />
+                ) : null
+              }
+            />
+            <Line dataKey="ratio" stroke="#7c3aed" strokeWidth={1.4} dot={false} isAnimationActive={false} />
+            {last && <ReferenceDot x={last.t} y={last.ratio} r={5} fill="#fff" stroke="#111827" strokeWidth={2.5} />}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="gn-legend">
+        <span>
+          <i style={{ background: "#7c3aed" }} />
+          {symbol} close ÷ model
+        </span>
+        <span>
+          <i style={{ background: INK }} />
+          Mean
+        </span>
+        <span>
+          <i style={{ background: "#9a9ca1" }} />
+          ±1 / ±2 SD
         </span>
       </div>
     </>

@@ -11,6 +11,8 @@ export interface RegressionPoint {
   fitted: number;
   /** The workbook's "return to best fit": fitted ÷ actual − 1. */
   retToFit: number;
+  /** Close ÷ model (the AMC dashboard's Regression ratio). */
+  ratio: number;
 }
 
 export interface RegressionResult {
@@ -25,6 +27,10 @@ export interface RegressionResult {
   retMean: number;
   retSd: number;
   retZ: number;
+  /** Mean and STDEV.S of close ÷ model over the window. The line is fitted on these sessions, so the mean sits near 1.00. */
+  ratioMean: number;
+  ratioSd: number;
+  ratioZ: number;
 }
 
 /** The workbook's "Regression signal". */
@@ -46,7 +52,7 @@ export function computeRegression(rows: AlignedRow[], avgGold: number[], span: W
   if (!fit) return null;
   const points = xs.map((x, j) => {
     const fitted = fit.intercept + fit.slope * x;
-    return { date: rows[span.startIdx + j].date, x, y: ys[j], fitted, retToFit: fitted / ys[j] - 1 };
+    return { date: rows[span.startIdx + j].date, x, y: ys[j], fitted, retToFit: fitted / ys[j] - 1, ratio: ys[j] / fitted };
   });
   const current = points[points.length - 1];
   const residual = current.y - current.fitted;
@@ -54,6 +60,9 @@ export function computeRegression(rows: AlignedRow[], avgGold: number[], span: W
   const rets = points.map((p) => p.retToFit);
   const retMean = mean(rets);
   const retSd = stdevS(rets);
+  const ratios = points.map((p) => p.ratio);
+  const ratioMean = mean(ratios);
+  const ratioSd = stdevS(ratios);
   return {
     fit,
     points,
@@ -64,6 +73,9 @@ export function computeRegression(rows: AlignedRow[], avgGold: number[], span: W
     retMean,
     retSd,
     retZ: retSd > 0 ? (current.retToFit - retMean) / retSd : 0,
+    ratioMean,
+    ratioSd,
+    ratioZ: ratioSd > 0 ? (current.ratio - ratioMean) / ratioSd : 0,
   };
 }
 
@@ -75,4 +87,15 @@ export function retLevel(r: RegressionResult, k: number): { ret: number; price: 
   const ret = r.retMean + k * r.retSd;
   const price = r.current.fitted / (1 + ret);
   return { ret, price, upside: price / r.current.y - 1 };
+}
+
+/**
+ * Close ÷ model at `k` SDs from its mean, and the price that puts it there
+ * today: today's model value × the ratio, so ±N SD sit an equal ₹ step either
+ * side of the mean.
+ */
+export function modelRatioLevel(r: RegressionResult, k: number): { ratio: number; price: number; upside: number } {
+  const ratio = r.ratioMean + k * r.ratioSd;
+  const price = r.current.fitted * ratio;
+  return { ratio, price, upside: price / r.current.y - 1 };
 }

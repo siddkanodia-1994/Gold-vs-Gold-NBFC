@@ -1,9 +1,9 @@
 "use client";
 
 import { ratioLevel } from "@/lib/analytics/ratio";
-import { retLevel } from "@/lib/analytics/regression";
+import { modelRatioLevel, retLevel } from "@/lib/analytics/regression";
 import { COMPANIES, type CompanyKey } from "@/lib/instruments";
-import { ActualVsModelChart, RatioChart, ReturnToFitChart, ScatterFitChart } from "./charts";
+import { ActualVsModelChart, ModelRatioChart, RatioChart, ReturnToFitChart, ScatterFitChart } from "./charts";
 import { AsideCard, FitStatGrid, GapText, LadderPanel, SD_LEVELS, zText } from "./common";
 import { dayLabel, inr, num, pct } from "./format";
 import { goldLabel, type Model } from "./model";
@@ -141,6 +141,32 @@ export function RegressionSection({ model, company }: { model: Model; company: C
         <p className="gn-cap">Share price: actual vs model</p>
         <ActualVsModelChart g={g} symbol={co.symbol} />
       </div>
+
+      <div className="gn-card">
+        <p className="gn-cap">Share price ÷ model</p>
+        <p className="gn-sub">
+          Each session&apos;s close over the best-fit line ({gl}), with the window mean and ±1 / ±2 SD. Above 1.00 the close was above the line, below 1.00 under it. Today{" "}
+          {g.current.ratio.toFixed(4)} ({zText(g.ratioZ)} SD). The line is fitted on these same sessions, so the mean sits near 1.00; the SD lines show how far the price has
+          typically strayed from it, not the odds of reaching a level.
+        </p>
+        <ModelRatioChart g={g} symbol={co.symbol} />
+      </div>
+
+      <LadderPanel
+        title="Model Ratio Analysis"
+        unit={`close ÷ model · ₹ per share · today's model value ${inr(g.current.fitted, 2)} · vs ${priceNote(model)} ${inr(g.current.y, 2)}`}
+        levelHeader="Ratio"
+        rows={SD_LEVELS.map((k) => {
+          const l = modelRatioLevel(g, k);
+          return { k, level: l.ratio.toFixed(4), price: l.price, upside: l.upside };
+        })}
+        facts={[
+          ["Today's ratio", g.current.ratio.toFixed(4)],
+          ["Z-score", zText(g.ratioZ)],
+          ["Today's model value", inr(g.current.fitted, 2)],
+          ["Sessions", `${g.fit.n} · ${g.points[0].date} → ${g.current.date}`],
+        ]}
+      />
 
       <div className="gn-card">
         <p className="gn-cap">Return to best fit</p>
